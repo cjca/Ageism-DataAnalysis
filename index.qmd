@@ -1,0 +1,149 @@
+<!--
+# Copyright (C) 2026 Christopher J. Carlson
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+-->
+
+---
+#title: Ageism in the Information Technology Workforce
+#subtitle: "A Quantitative Study into Ageism within IT"
+#date: today
+#lang: en-US
+
+
+#author:
+#  - name: Christopher J. Carlson
+#    email: ccarlson6@css.edu
+#    corresponding: true
+#    orcid: 0009-0006-4214-408X
+#    affiliations: 
+#      - name: College of St. Scholastica
+#        department: Stender School of Leadership, Business, and Professional Studies
+#        address: 1200 Kenwood Ave
+#        city: Duluth
+#        region: MN
+#        postal-code: 55811
+#
+#abstract: "Abstract Here"
+#keywords: [ageism, employment]
+#author-note:
+#  discloures:
+#    conflict of interest: The author has no conflict of interest to declare.
+
+knitr:
+  opts_chunk:
+    dev: "ragg_png"
+    dpi: 300
+
+format:
+  docx: 
+#    fig-width: 5
+#    fig-height: 4 
+    csl: apa.csl
+#    keep-md: true
+    code-block-bg: false
+#    code-block-border-left: false
+    reference-doc: apa.docx
+    css: apa-code.css
+  html:
+    out-width: 100%
+
+
+editor: source
+
+#bibliography: references.bib
+
+#csl: apa.csl
+
+---
+
+```{r Index Setup, include=FALSE}
+#| echo: false
+#| eval: false
+library('tidyverse')
+library('ggthemes')
+library('mice')
+library('devtools')
+
+source("_recode_likert.R")
+
+source("_graph_standards_bar.R")
+source("_graph_standards_line.R")
+source("_graph_standards_heatmap.R")
+source("_graph_standards_scatter.R")
+source("_graph_standards_histogram.R")
+```
+
+# Introduction
+
+Data were collected through a Qualtrics survey between November 13, 2025 and 
+December 31, 2025 (48 days). A total of 166 responses were recorded. 
+
+This analysis is broken into seven distinctive sections with analysis focused
+within their respective topics. 
+
+1. Load And Clean: Initial cleaning of data. Provides a foundational data frame 
+for further cleaning and analysis of data in future sections.
+
+2. Demographics: The demographic data related to each of the survey 
+participants.
+
+3. Age Perception: How the survey participants view the subjective concept of 
+age and the age at which the survey taker understands someone to be "old".
+
+4. Fraboni Analysis: Results from participants taking the original Fraboni Scale 
+of Ageism questionnaire.
+
+5. Ageism and Employment: Understanding how survey participants understand 
+ageism in the Information Technology field.
+
+6. Personal Experience: The personal experience survey participants have had in
+relation to ageism in their employment career.
+
+7. Correlation Analysis: Final overall correlation analysis along with overall
+assessments.
+
+# Session Information
+
+Included are the versions of all tools and packages used in this analysis.
+
+```{r}
+#| label: cde-inx-SessionInfo
+devtools::session_info()
+```
+
+{{< pagebreak >}}
+
+{{< include 01-LoadAndClean-Report.qmd >}}
+{{< pagebreak >}}
+
+{{< include 02-Demographics-Report.qmd >}}
+{{< pagebreak >}}
+
+{{< include 03-AgePerception-Report.qmd >}}
+{{< pagebreak >}}
+
+{{< include 04-FraboniScale-Report.qmd >}}
+{{< pagebreak >}}
+
+{{< include 05-AgeismEmployment-Report.qmd >}}
+{{< pagebreak >}}
+
+{{< include 06-PersonalExperience-Report.qmd >}}
+{{< pagebreak >}}
+
+{{< include 07-CorrelationAnalysis.qmd >}}
+{{< pagebreak >}}
+
+##{{< include Data_Dictionary.md >}}
