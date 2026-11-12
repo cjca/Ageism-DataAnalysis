@@ -1,27 +1,76 @@
 # Ageism in the Information Technology Workforce
 
-This repository exists to support the dissertation "Ageism in the Information 
-Technology Workforce" being written by Christopher Carlson for my EdD degree 
-at the College of Saint Scholastica.
+Data and analysis code supporting the doctoral dissertation
+*Ageism in the Information Technology Workforce* by Christopher J. Carlson,
+submitted in partial fulfillment of the requirements for the degree of Doctor of
+Education (EdD) at The College of St. Scholastica.
 
-Committee Members
-* Dr. David Marc, PhD (Chair)
-* Dr. Thomas Gibbons, PhD
-* Dr. Niall Klyn, PhD
+> **Status:**  Under Committee Review.
 
-All data in this repository is either sample data or data that is completely 
-anonymized.
+## Contents
 
-# Session Data
+- [About This Repository](#about-this-repository)
+- [Committee](#committee)
+- [Data](#data)
+- [Reproducing the Analysis](#reproducing-the-analysis)
+- [Computational Environment](#computational-environment)
+- [License](#license)
+- [Contact](#contact)
 
-Session data is subject to change. The data should compile successfully with
-the minimum versions displayed below.
+## About This Repository
 
-* Data analysis completed using R 4.6.0 with RStudio 2026.05.1+225.
+This study examines Ageism among IT Professionals using a survey and quantitative analysis.
 
-* Data presentation completed using Quarto 1.9.37 and Pandoc 3.8.3.
+This repository contains the data and the R/Quarto code used to process,
+analyze, and present the results reported in the dissertation. It is published
+in the interest of transparency and reproducibility.
 
-```
+**The dissertation document itself is not part of this repository's license and
+is not distributed here.** See [License](#license).
+
+## Committee
+
+- Dr. David Marc, PhD (Chair)
+- Dr. Thomas Gibbons, PhD
+- Dr. Niall Klyn, PhD
+
+## Data
+
+All data in this repository has been completely anonymized. No direct identifiers are included. Please do not attempt to re-identify any participant or organization from this
+data.
+
+## Study approval
+
+Reviewed by The College of St. Scholastica IRB.
+
+## Reproducing the Analysis
+
+1. Install [R](https://cran.r-project.org/) 4.6.0 or later and
+   [RStudio](https://posit.co/download/rstudio-desktop/).
+2. Install [Quarto](https://quarto.org/docs/get-started/) 1.9.37 or later (it is
+   also bundled with current RStudio releases).
+3. Clone this repository and open the project in RStudio.
+4. Install the required packages (listed under
+   [Computational Environment](#computational-environment)).
+5. Render the Quarto document(s):
+
+   ```bash
+   quarto render
+   ```
+
+The analysis should compile successfully with the minimum versions listed below.
+Session data is subject to change as software is updated.
+
+## Computational Environment
+
+Data analysis was completed using R 4.6.0 with RStudio 2026.05.1+225. Data
+presentation was completed using Quarto 1.9.37 and Pandoc 3.8.3. The session
+information below was captured on 2026-06-19.
+
+<details>
+<summary>Session information</summary>
+
+```text
  version  R version 4.6.0 (2026-04-24 ucrt)
  os       Windows 11 x64 (build 26200)
  system   x86_64, mingw32
@@ -32,10 +81,10 @@ the minimum versions displayed below.
  tz       America/Chicago
  date     2026-06-19
  rstudio  2026.05.1+225 Golden Wattle (desktop)
- pandoc   3.8.3 @ C:/Program Files/RStudio/resources/app/bin/quarto/bin/tools/ (via rmarkdown)
- quarto   1.9.37 @ C:\\PROGRA~1\\RStudio\\RESOUR~1\\app\\bin\\quarto\\bin\\quarto.exe
+ pandoc   3.8.3
+ quarto   1.9.37
 
-─ Packages ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+─ Packages ─────────────────────────────────────────────────────────────
  package      * version date (UTC) lib source
  backports      1.5.1   2026-04-03 [1] CRAN (R 4.6.0)
  broom        * 1.0.12  2026-01-27 [1] CRAN (R 4.6.0)
@@ -102,6 +151,37 @@ the minimum versions displayed below.
  withr          3.0.2   2024-10-28 [1] CRAN (R 4.6.0)
  xfun           0.57    2026-03-20 [1] CRAN (R 4.6.0)
  xml2           1.5.2   2026-01-17 [1] CRAN (R 4.6.0)
- ```
- 
- 
+```
+
+</details>
+
+## License
+
+Copyright (C) 2026 Christopher J. Carlson
+
+The **data and processing code** in this repository are released under the
+[GNU General Public License, version 3](https://www.gnu.org/licenses/gpl-3.0.html)
+(or, at your option, any later version).
+
+The **dissertation document itself** (including its text, tables, and figures as
+presented in the manuscript) is **not** covered by this license and is not
+included in this repository. All rights in the dissertation are reserved by the
+author except as provided by The College of St. Scholastica and any
+dissertation publication agreement.
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program. If not, see <https://www.gnu.org/licenses/>.
+
+## Contact
+
+Christopher J. Carlson
+https://orcid.org/0009-0006-4214-408X
