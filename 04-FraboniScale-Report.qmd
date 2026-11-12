@@ -1,0 +1,747 @@
+# Fraboni Scale on Ageism
+
+This section focuses on asking participants to participate in the actual
+Fraboni Scale on Ageism questions. The results from this will allow me to
+compare the IT industry to other industries where the same test has been taken.
+
+```{r}
+#| label: set-fsa-Setup
+#| echo: false
+#| include: false
+
+library('tidyverse')
+library('ggthemes')
+library('car')
+
+source("_recode_likert.R")
+
+source("_graph_standards_bar.R")
+source("_graph_standards_histogram.R")
+
+main_df <- readRDS("main_df.rds")
+```
+
+## Character Vectors
+
+### Reverse Score Character Vector Creation
+
+To help add to the validity of the Fraboni Scale, the authors introduced reverse 
+scale questions. This helps to prevent a participant from quickly ranking all 
+choices based on the first few questions without reading what is being asked.
+To score these appropriately, I create a character vector with the questions 
+that contains the questions I will score in reverse order. 
+
+```{r}
+#| label: vec-fra-ReverseScaleQuestions
+
+reverse_scale_variables <- c("Fraboni_Scale_8",
+                             "Fraboni_Scale_12",
+                             "Fraboni_Scale_14",
+                             "Fraboni_Scale_21",
+                             "Fraboni_Scale_22",
+                             "Fraboni_Scale_23",
+                             "Fraboni_Scale_24")
+```
+
+### Character Vectors For Fraboni Subgroup Questions
+
+The Fraboni Scale of Ageism addresses three distinct subgroups of ageism. These
+are:
+
+- Antilocution: Negative verbal remarks toward the elderly
+- Discrimination: Prejudicial treatment of the elderly
+- Avoidance: Action of Avoiding activities with the elderly
+
+These are identified by distinct questions related to each and are broken out
+here.
+
+```{r}
+#| label: vec-fra-SubQuestions
+
+# Fraboni Questions related to Antilocution
+# Q 1,3,4,5,9,16,25,27,28,29
+
+fraboni_antilocution <-   c("Fraboni_Scale_1",
+                            "Fraboni_Scale_3",
+                            "Fraboni_Scale_4",
+                            "Fraboni_Scale_5",
+                            "Fraboni_Scale_9",
+                            "Fraboni_Scale_16",
+                            "Fraboni_Scale_25",
+                            "Fraboni_Scale_27",
+                            "Fraboni_Scale_28",
+                            "Fraboni_Scale_29")
+
+# Fraboni Questions related to Discrimination
+# Q 2,8,17,18,20,21,22,23,24
+
+fraboni_discrimination <- c("Fraboni_Scale_2",
+                            "Fraboni_Scale_8",
+                            "Fraboni_Scale_17",
+                            "Fraboni_Scale_18",
+                            "Fraboni_Scale_20",
+                            "Fraboni_Scale_21",
+                            "Fraboni_Scale_22",
+                            "Fraboni_Scale_23",
+                            "Fraboni_Scale_24")
+
+# Fraboni Questions related to Avoidance
+# Q 6,7,10,11,12,13,14,15,19,26
+
+fraboni_avoidance <-      c("Fraboni_Scale_6",
+                            "Fraboni_Scale_7",
+                            "Fraboni_Scale_10",
+                            "Fraboni_Scale_11",
+                            "Fraboni_Scale_12",
+                            "Fraboni_Scale_13",
+                            "Fraboni_Scale_14",
+                            "Fraboni_Scale_15",
+                            "Fraboni_Scale_19",
+                            "Fraboni_Scale_26")
+```
+
+### Response to Number Mapping
+
+The Fraboni Scale uses a 4 point Likert Scale with the following point values 
+when in normal form. The values are reversed when the reverse scale is used.
+
+- 1: Strongly Disagree
+- 2: Disagree
+- 3: Agree
+- 4: Strongly Agree
+
+I create the maps to associate the numbers with the responses for both normal 
+and reverse scales.
+
+```{r}
+#| label: vec-fra-QuestionNumberMaps
+
+fraboni_map <- list(
+  normal = c(
+    "Strongly Disagree" = 1, 
+    "Disagree"          = 2,
+    "Agree"             = 3, 
+    "Strongly Agree"    = 4
+  ),
+  reverse = c(
+    "Strongly Agree"    = 1,
+    "Agree"             = 2, 
+    "Disagree"          = 3,
+    "Strongly Disagree" = 4
+  )
+)
+```
+
+## Main Processing
+
+### Recode the DataFrame
+
+I recode the dataframe with the answers to the `Fraboni_Scale_` questions and 
+the mappings we created for the Normal and Reverse scales.
+
+```{r}
+#| label: cde-fra-RecodeDataFrame
+
+fraboni_df <- recode_likert(main_df,
+                            "Fraboni_Scale_",
+                            fraboni_map$normal,
+                            fraboni_map$reverse,
+                            reverse_scale_variables)
+```
+
+### Create a Dataframe from our cleaned data for Fraboni Analysis
+
+I Create a Fraboni data frame with User ID and their answers to the Fraboni 
+Scale questions. I made the decision to drop any rows where there is an NA 
+because of the way the score is calculated and compared.
+
+Fraboni scores are a sum of all the numerical representation of the answers. I 
+can not just ignore the NA due to the fact it hurts the final score and I do not 
+want to average or infer anything due to the nature of these questions.
+
+I first print how many rows are impacted and then remove them from the data 
+frame.
+
+```{r}
+#| label: cde-fra-DropNAs
+
+fraboni_df |>
+  select(ID, starts_with("Fraboni_scale_")) |>
+  filter(if_any(-ID, is.na)) |>
+  nrow()
+
+
+fraboni_df <- fraboni_df |>
+  select(ID, starts_with("Fraboni_Scale_")) |>
+  # Drop row if ANY answers are NA
+  filter(!if_any(-ID, is.na))
+```
+
+## Post Data Frame Manipulation Information:
+
+Any NAs in fraboni data frame: ***`r anyNA(fraboni_df)`***
+
+Number of Research Participants for fraboni analysis is: 
+***`r nrow(fraboni_df)`***
+
+### Add a Columns for the different Fraboni Scores.
+
+```{r}
+#| label: cde-fra-ScoreColumns
+
+fraboni_df <- fraboni_df |>
+  mutate(
+    Total_Score = rowSums(
+      across(starts_with("Fraboni_Scale_"), ~as.numeric(.x))
+    ),
+    Disc_Score = rowSums(
+      across(all_of(fraboni_discrimination), ~as.numeric(.x))
+    ),
+    Avoid_Score = rowSums(
+      across(all_of(fraboni_avoidance), ~as.numeric(.x))
+    ),
+    AntiLoc_Score = rowSums(
+      across(all_of(fraboni_antilocution), ~as.numeric(.x))
+    )
+  )
+
+```
+
+### Save Out Fraboni Data Frame
+We will be using this cleaned data frame in our Correlation Analysis.
+
+```{r}
+#| label: cde-fra-SaveDataFrame
+
+saveRDS(fraboni_df, 
+        "fraboni_df.rds")
+```
+
+### Summary Statistics for calculated scores
+
+```{r}
+#| label: tbl-fra-SummaryStats
+#| tbl-cap: "Statistics of Fraboni Scores for Total and each Element"
+
+fraboni_df |>
+  select(Total_Score, Disc_Score, Avoid_Score, AntiLoc_Score) |>
+  pivot_longer(everything(), names_to = "Score", values_to = "Value") |>
+  group_by(Score) |>
+  summarise(
+    N      = n(),
+    Mean   = round(mean(Value), 2),
+    SD     = round(sd(Value), 2),
+    Median = round(median(Value), 2),
+    Min    = min(Value),
+    Max    = max(Value),
+    .groups = "drop"
+  ) |>
+  mutate(Score = dplyr::recode(Score,
+    "Total_Score"   = "Total",
+    "Disc_Score"    = "Discrimination",
+    "Avoid_Score"   = "Avoidance",
+    "AntiLoc_Score" = "Antilocution"
+  )) |>
+  knitr::kable(col.names = c("Score", "N", "Mean", "SD", 
+                             "Median", "Min", "Max"),
+               align = c("l", "r", "r", "r", "r", "r", "r"))
+```
+
+### Histogram of Data Sets
+
+Histograms show the number of participants who score certain point groupings in 
+the Fraboni scale.
+
+#### Total Score Histogram
+
+Histogram representing the Fraboni Total Score of survey participants. 
+
+- Questions: 29
+- Bin Size: 5
+- Max Possible Score: 116 (Most Ageist)
+- Min Possible Score: 29  (Least Ageist)
+
+```{r}
+#| label: fig-fra-FraboniHistogramTotal
+#| fig-cap: "Histogram of Total Fraboni Score"
+#| fig-height: 5
+#| out-width: "100%"
+
+graph_histogram(fraboni_df, 
+                "Total_Score", 
+                "Total Score", 
+                "Count",
+                lower_x = 29,
+                upper_x = 116,
+                binwidth = 5)
+```
+
+#### Discrimination Score Histogram
+
+Histogram representing the Fraboni Discrimination Score of survey participants.
+
+- Questions: 9
+- Bin Size: 3
+- Max Possible Score: 36 (Most Ageist)
+- Min Possible Score: 9  (Least Ageist)
+
+```{r}
+#| label: fig-fra-FraboniHistogramDiscrimination
+#| fig-cap: "Histogram of Discrimination Fraboni Score"
+#| fig-height: 5
+#| out-width: "100%"
+
+graph_histogram(fraboni_df, 
+                "Disc_Score", 
+                "Discrimination Score", 
+                "Count",
+                lower_x = 9,
+                upper_x = 36,
+                binwidth = 3)
+```
+
+#### Avoidance Score Histogram
+
+- Questions: 10
+- Bin Size: 3
+- Max Possible Score: 40 (Most Ageist)
+- Min Possible Score: 10 (Least Ageist)
+
+Histogram representing the Fraboni Avoidance Score of survey participants. 
+
+```{r}
+#| label: fig-fra-FraboniHistogramAvoidance
+#| fig-cap: "Histogram of Avoidance Fraboni Score"
+#| fig-height: 5
+#| out-width: "100%"
+graph_histogram(fraboni_df, 
+                "Avoid_Score", 
+                "Avoidance Score", 
+                "Count",
+                lower_x = 10,
+                upper_x = 40,
+                binwidth = 3)
+```
+
+#### Antilocution Score Histogram
+
+- Questions: 10
+- Bin Size: 3
+- Max Possible Score: 40 (Most Ageist)
+- Min Possible Score: 10 (Least Ageist)
+
+Histogram representing the Fraboni Antilocution Score of survey participants. 
+
+```{r}
+#| label: fig-fra-FraboniHistogramAntilocution
+#| fig-cap: "Histogram of Antilocution Fraboni Score"
+#| fig-height: 5
+#| out-width: "100%"
+
+graph_histogram(fraboni_df, 
+                "AntiLoc_Score", 
+                "Antilocution Score", 
+                "Count",
+                lower_x = 10,
+                upper_x = 40,
+                binwidth = 3)
+```
+
+## ANOVA Assumptions Testing
+
+Before running the ANOVA analysis, I verify that the key assumptions are met:
+
+* normality of residuals
+* homogeneity of variance 
+* independence (guaranteed by study design since each respondent contributes one 
+score).
+
+```{r}
+#| label: cde-fra-PrepANOVA
+
+age_fraboni <- fraboni_df |>
+  select(ID, Total_Score) |>
+  left_join(main_df |>
+              select(ID, Age), by = "ID")
+
+# Fit initial ANOVA model for diagnostics
+anova_model_temp <- aov(Total_Score ~ Age, data = age_fraboni)
+```
+
+### Normality of Residuals
+
+The Shapiro-Wilk test evaluates whether residuals follow a normal distribution. 
+A p-value > 0.05 suggests normality is a reasonable assumption.
+
+```{r}
+#| label: fig-fra-QQPlot
+#| fig-cap: "Q-Q Plot of ANOVA Residuals"
+#| out-width: "100%"
+#| fig-height: 4
+
+par(mfrow = c(1, 2))
+
+# Q-Q plot
+qqnorm(residuals(anova_model_temp), 
+       main = "Q-Q Plot of Residuals",
+       ylab = "Residuals")
+qqline(residuals(anova_model_temp), col = "red", lwd = 2)
+
+# Histogram of residuals
+hist(residuals(anova_model_temp), 
+     main = "Histogram of Residuals",
+     xlab = "Residuals",
+     breaks = 15,
+     col = "steelblue")
+
+par(mfrow = c(1, 1))
+```
+
+```{r}
+#| label: tbl-fra-ShapiroWilk
+#| tbl-cap: "Shapiro-Wilk Test for Normality of Residuals"
+
+shapiro_test <- shapiro.test(residuals(anova_model_temp))
+data.frame(
+  Statistic = round(shapiro_test$statistic, 4),
+  p.value = round(shapiro_test$p.value, 4)
+) |>
+  knitr::kable()
+```
+
+I have a p-value of 0.9258. To assume normality I need the p-value to be greater
+than 0.05. With this data set we can assume normality.
+
+### Homogeneity of Variance
+
+Levene's test evaluates whether the variance of Fraboni scores is equal across 
+age groups. A p-value > 0.05 suggests the homogeneity assumption is met.
+
+```{r}
+#| label: tbl-fra-LeveneTest
+#| tbl-cap: "Levene's Test for Homogeneity of Variance"
+
+levene_test <- leveneTest(Total_Score ~ Age, data = age_fraboni)
+data.frame(
+  Test_Statistic = round(levene_test$`F value`[1], 4),
+  p.value = round(levene_test$`Pr(>F)`[1], 4)
+) |>
+  knitr::kable()
+```
+
+I have a p-value of .2238 and to assume homogeneity of variance, I would again
+need a p-value greater than 0.05. Therefore I can assume homogeneity of variance
+with this data set.
+
+### Assumption Summary
+
+Based on these tests:
+- Normality: Reasonable
+- Homogeneity of Variance: Reasonable
+- Independence: By design (each respondent = one observation)
+
+ANOVA is reasonably robust to violations of normality with moderate sample 
+sizes, and we report results below with these caveats noted.
+
+### How much does Participant Age impact Fraboni Ageism Score?
+
+I create a one-way ANOVA to determine if the age of the participant impact 
+their Fraboni Ageism Score. 
+
+For our analysis, we will assume a `P-Value` of `< .05` to be statistically 
+significant.
+
+To accomplish this I: 
+
+- Add the Participant Age column from the main_df to the fraboni_df. 
+- Average the Score based on Participant Age 
+- Build the ANOVA model
+
+Note: Scaling the score from 0-100 from 29-116 is not necessary for the ANOVA
+process.
+
+```{r}
+#| label: tbl-fra-ANOVAPrep
+#| tbl-cap: "Fraboni ANOVA Summary"
+
+average_scores_by_age <- age_fraboni |>
+  group_by(Age) |>
+  summarise(Average_Score = mean(Total_Score, na.rm = TRUE),
+            N = n()) 
+
+# Use an ANOVA model to determine if there is a significant statistical
+# difference between the different age groups.
+
+anova_model <- aov(Total_Score ~ Age, data = age_fraboni)
+knitr::kable(summary(anova_model)[[1]])
+```
+
+### ANOVA Analysis
+
+This shows weak evidence and the data does not show the age of the participant 
+has an impact on the Fraboni Score. **We Fail to reject the null hypothesis.**
+
+An `F Statistic` of `r summary(anova_model)[[1]][1, 4]` indicates the variance 
+between age groups is slightly less than the variance within the age groups.
+
+A `P-Value` of `r summary(anova_model)[[1]][1, 5]` indicates that we fail to 
+reject the null hypothesis theory. There is no statistical significance between 
+the age group of the person and their score. There is a good probability that 
+these results occurred by chance.
+
+Based on this information, we can not say that age has any impact on levels of 
+ageism when we are basing it on the age of the individual.
+
+It is important to reiterate the comparatively small sample size for younger 
+individuals in this analysis and the impact on the validity to this research.
+
+## Significance of Ageist Types
+
+The Fraboni Scale of Ageism defines three different types of Ageist 
+Discrimination. They are: 
+
+- Discrimination: Patterns of unfair, prejudicial, or unequal treatment due to 
+ones age. 
+- Avoidance: Patterns to avoid interactions with someone because of their age. 
+- Antilocution: Patterns of negative verbal remarks or hateful speech towards an 
+individual due to their age.
+
+To determine of there is any correlation with these individual ageist types, I 
+will perform the same ANOVA analysis specifically towards the questions 
+associated with these ageist types.
+
+### Discrimination
+
+```{r}
+#| label: tbl-fra-DiscriminationANOVA
+#| tbl-cap: "Fraboni ANOVA Discrimination Summary"
+
+age_disc_fraboni <- fraboni_df |>
+  select(ID, Disc_Score) |>
+  left_join(main_df |>
+              select(ID, Age), by = "ID")
+average_disc_scores_by_age <- age_disc_fraboni |>
+  group_by(Age) |>
+  summarise(Average_Score = mean(Disc_Score, na.rm = TRUE),
+            N = n()) 
+
+# Use an ANOVA model to determine if there is a significant statistical
+# difference between the different age groups.
+
+anova_model <- aov(Disc_Score ~ Age, data = age_disc_fraboni)
+knitr::kable(summary(anova_model)[[1]])
+```
+
+### Discrimination ANOVA Analysis
+
+Again for the Discrimination Questions, we see weak evidence and the data does 
+not show the age of the participant has an impact on the Fraboni questions 
+related to Discrimination. **We Fail to reject the null hypothesis.**
+
+An `F Statistic` of `r summary(anova_model)[[1]][1, 4]` indicates the variance 
+between age groups almost equal to the variance within the age groups.
+
+A `P-Value` of `r summary(anova_model)[[1]][1, 5]` indicates that we fail to 
+reject the null hypothesis theory. There is no statistical significance between 
+the age group of the person and their discrimination score.
+
+### Avoidance
+
+```{r}
+#| label: tbl-fra-AvoidanceANOVA
+#| tbl-cap: "Fraboni ANOVA Avoidance Summary"
+
+age_avoid_fraboni <- fraboni_df |>
+  select(ID, Avoid_Score) |>
+  left_join(main_df |>
+              select(ID, Age), by = "ID")
+average_avoid_scores_by_age <- age_avoid_fraboni |>
+  group_by(Age) |>
+  summarise(Average_Score = mean(Avoid_Score, na.rm = TRUE),
+            N = n()) 
+
+# Use an ANOVA model to determine if there is a significant statistical
+# difference between the different age groups.
+
+anova_model <- aov(Avoid_Score ~ Age, data = age_avoid_fraboni)
+knitr::kable(summary(anova_model)[[1]])
+```
+
+### Avoidance ANOVA Analysis
+
+For the Avoidance Questions, we see weak evidence and the data does not show the 
+age of the participant has an impact on the Fraboni questions related to 
+Avoidance **We Fail to reject the null hypothesis.**
+
+An `F Statistic` of `r summary(anova_model)[[1]][1, 4]` indicates the variance
+between age groups is less than half the variance within the groups. Age groups
+are all similar to each other.
+
+A `P-Value` of `r summary(anova_model)[[1]][1, 5]` indicates that we fail to 
+reject the null hypothesis theory. There is no statistical significance between 
+the age group of the person and their avoidance score.
+
+### Antilocution
+
+```{r}
+#| label: tbl-fra-AntilocutionANOVA
+#| tbl-cap: "Fraboni ANOVA Antilocution Summary"
+
+age_antiloc_fraboni <- fraboni_df |>
+  select(ID, AntiLoc_Score) |>
+  left_join(main_df |>
+              select(ID, Age), by = "ID")
+average_antiloc_scores_by_age <- age_antiloc_fraboni |>
+  group_by(Age) |>
+  summarise(Average_Score = mean(AntiLoc_Score, na.rm = TRUE),
+            N = n()) 
+
+# Use an ANOVA model to determine if there is a significant statistical
+# difference between the different age groups.
+
+anova_model <- aov(AntiLoc_Score ~ Age, data = age_antiloc_fraboni)
+knitr::kable(summary(anova_model)[[1]])
+```
+
+### Antilocution ANOVA Analysis
+
+For the Antilocution Questions, we see very small evidence and the data may show 
+the age of the participant has an impact on the Fraboni questions related to 
+Antilocution. However, we still **Fail to reject the null hypothesis.** Small
+group sizes in the younger participants leads to this conclusion.
+
+An `F Statistic` of `r summary(anova_model)[[1]][1, 4]` indicates the age groups 
+possibly explain something in terms of variance, however not enough variance
+exists to be meaningful.
+
+A `P-Value` of `r summary(anova_model)[[1]][1, 5]` indicates that we still fail 
+to reject the null hypothesis theory, however out of the three groups, 
+Antilocution offers the closest trend of significance.
+
+## Overall Analysis.
+
+The general average of all questions shows that we fail to reject the null 
+hypothesis theory. There is no indication that a person's age impacts their 
+level of ageism when using the Fraboni Scale of Ageism. Closer analysis when 
+we break the Fraboni questions into their respective types leads to the same 
+conclusion; however questions related to Anticolution scored higher than the 
+others indicating a possible trend in this area that could be worth 
+investigating further.
+
+It should be stressed that the results are based on low participation in both
+the younger and older age groups as seen in the Demographics reporting. While I
+feel these results are valid, further research with more participation in 
+different age groups could be more revealing.
+
+## Graphs
+
+### Total Average Fraboni Scores
+
+Total Average Scores by Age Group
+
+```{r}
+#| label: fig-fra-FraboniScoreTotal
+#| fig-cap: "Average Fraboni Scores by Age Range"
+#| fig-height: 5
+#| out-width: "100%"
+
+average_scores_by_age <- average_scores_by_age |>
+  mutate(score_label = as.character(round(Average_Score, 1)))
+
+graph_bar_chart(average_scores_by_age, 
+                "Age", 
+                "Age Range", 
+                "Average Score",
+                y_category = "Average_Score",
+                label_col  = "score_label", 
+                horizontal = FALSE)
+```
+
+### Discrimination Average Fraboni Scores
+
+Discrimination Average Scores by Age Group
+
+```{r}
+#| label: fig-fra-FraboniScoreDiscrimination
+#| fig-cap: "Discrimination Fraboni Scores by Age Range"
+#| fig-height: 5
+#| out-width: "100%"
+
+#| out-width: "100%"
+average_disc_scores_by_age <- average_disc_scores_by_age |>
+  mutate(score_label = as.character(round(Average_Score, 1)))
+
+graph_bar_chart(average_disc_scores_by_age, 
+                "Age", 
+                "Age Range", 
+                "Average Score",
+                y_category = "Average_Score",
+                label_col  = "score_label", 
+                horizontal = FALSE)
+```
+
+### Avoidance Average Fraboni Scores
+
+Avoidance Average Scores by Age Group
+
+```{r}
+#| label: fig-fra-FraboniScoreAvoidance
+#| fig-cap: "Avoidance Fraboni Scores by Age Range"
+#| fig-height: 5
+#| out-width: "100%"
+
+average_avoid_scores_by_age <- average_avoid_scores_by_age |>
+  mutate(score_label = as.character(round(Average_Score, 1)))
+
+graph_bar_chart(average_avoid_scores_by_age, 
+                "Age", 
+                "Age Range", 
+                "Average Score", 
+                y_category = "Average_Score",
+                label_col  = "score_label", 
+                horizontal = FALSE)
+```
+
+### Antilocution Average Fraboni Scores
+
+Antilocution Average Scores by Age Group
+
+```{r}
+#| label: fig-fra-FraboniScoreAntilocution
+#| fig-cap: "Antilocution Fraboni Scores by Age Range"
+#| fig-height: 5
+#| out-width: "100%"
+
+average_antiloc_scores_by_age <- average_antiloc_scores_by_age |>
+  mutate(score_label = as.character(round(Average_Score, 1)))
+
+graph_bar_chart(average_antiloc_scores_by_age, 
+                "Age", 
+                "Age Range", 
+                "Average Score", 
+                y_category = "Average_Score",
+                label_col  = "score_label", 
+                horizontal = FALSE)
+```
+
+## Summary
+Based on the data, we find no evidence that IT professional's age impacts their
+level of ageism based on the Fraboni Scale of Ageism. Further, when looking at
+the summary statistics, we understand that IT workers with a mean score of 50.81 
+and a standard deviation of 9.12 are similar or higher than other industries 
+where we have access to Fraboni Data.
+
+MOVE THIS DISCUSSION TO PAPER.
+
+Lebanese Healthcare Workers: 58.9 SD 10.2 (Healthcare)
+Turkish Study: 59.66 SD 9.40 (Gen Pop)
+Nusring/Brazil Study: 36.74
+Nursing/Japan Study: 29.80 (J_FSA Different)
+
+
+
+https://journals-sagepub-com.akin.css.edu/doi/10.1177/30495334251325606
+https://onlinelibrary.wiley.com/doi/10.1111/j.1442-2018.2012.00717.x
+https://academic.oup.com/innovateage/article/9/Supplement_2/igaf122.1921/8411040
+https://pmc.ncbi.nlm.nih.gov/articles/PMC11625483/
+https://pmc.ncbi.nlm.nih.gov/articles/PMC7792127/

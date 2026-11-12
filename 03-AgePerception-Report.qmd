@@ -1,0 +1,649 @@
+# Age Perception
+
+This section focuses on the perception of old age to determine at what point
+a person is identified as old with respect to the respondents own age. I wish to 
+answer Research Question 1: What is the correlation, if any, between an IT 
+worker’s own age and the age at which they feel a person is deemed “old”.
+
+```{r}
+#| label: set-ap-Setup
+#| echo: false
+#| include: false
+
+library('tidyverse')
+library('ggthemes')
+library('mice')
+
+source("_graph_standards_bar.R")
+source("_graph_standards_line.R")
+source("_graph_standards_heatmap.R")
+source("_graph_standards_scatter.R")
+
+main_df <- readRDS("main_df.rds")
+```
+
+## Vector Definitions
+
+I define the named and character vectors here to assign the labels in the survey 
+with numbers so we can perform statistical analysis on the results along with
+definitions to better understand data.
+
+```{r}
+#| label: vec-ap-VectorDefinitions}
+# Map for converting Age_Perception section answers to Likert scale numbers.
+age_perception_map <- c(
+  "Very Young"  = 1, 
+  "Young"       = 2, 
+  "Middle Aged" = 3,
+  "Old"         = 4, 
+  "Very Old"    = 5
+)
+
+# Map of the Respondent Age Levels based on the Survey
+# Note: All respondents under 18 have been removed.
+respondent_age_levels <- c(
+  "18-24 years old",
+  "25-34 years old",
+  "35-44 years old",
+  "45-54 years old",
+  "55-64 years old",
+  "65+ years old"
+)
+
+# Map for better formatting of labels.
+respondent_age_labels <- c(
+  "18-24",
+  "25-34",
+  "35-44",
+  "45-54",
+  "55-64",
+  "65+"
+)
+
+# Age Labels for Questions
+age_labels <- c(
+  "18-21", 
+  "22-25", 
+  "26-30", 
+  "31-35", 
+  "36-40",
+  "41-45", 
+  "46-50", 
+  "51-55", 
+  "56-60", 
+  "61-65",
+  "66-70", 
+  "71-75", 
+  "76-80", 
+  "81+"
+)
+
+# Rating Labels
+rating_labels = c(
+  '1 - Very\nYoung', 
+  '2 - Young', 
+  '3 - Middle\nAged',
+  '4 - Old', 
+  '5 - Very\nOld'
+)
+
+```
+
+## Age Perception dataframe
+
+I create an Age Perception data frame with ID and answers to the Ageism 
+Perception questions. 
+
+```{r}
+#| label: cde-ap-ForwardFill
+
+# Build data frame with only the variables that are valuable in this analysis.
+age_perception_df <- main_df |>
+  select(ID, Age, starts_with("Age_Perception_"))
+
+# Factor Age and Map the Perception to a Number. 
+age_perception_df <- age_perception_df |>
+  mutate(
+    respondent_age = factor(
+      respondent_age_labels[match(Age, respondent_age_levels)],
+      levels = respondent_age_labels
+    ),
+    across(starts_with("Age_Perception_"),
+           ~ age_perception_map[.x])) 
+
+# Drop Age Column in favor of respondent_age
+age_perception_df <- age_perception_df |>
+  select(-Age)
+```
+
+## Inspect Rows With Missing Values
+
+There will be two strategies used to address NA values. If a row doesn't start
+with NA, I can make logical determinations as to what the values would be with
+a forward fill strategy. If the row starts with NA, I make a decision between
+using an imputation strategy or dropping the row completely.
+
+Before making these decisions, I want to see which respondents have any NAs 
+across the Age_Perception items, how many NAs each has, and specifically how 
+many begin with an NA in the first item.
+
+```{r}
+#| label: cde-ap-InspectNAs
+
+na_inspect <- age_perception_df |>
+  mutate(
+    na_count   = rowSums(is.na(across(starts_with("Age_Perception_")))),
+    starts_na  = is.na(Age_Perception_1)
+  ) |>
+  filter(na_count > 0) |>
+  select(ID, respondent_age, na_count, starts_na)
+
+na_inspect |>
+  knitr::kable(col.names = c("ID", 
+                             "Respondent Age", 
+                             "Num Missing",
+                             "Starts With NA"))
+```
+
+- Rows with any NA: `r nrow(na_inspect)`
+- Rows starting with NA (leading NA, unfixable by forward fill):
+  `r sum(na_inspect$starts_na)`
+
+## Dropping Rows
+
+There is a fairly significant cutoff seen in the data. There are only 7 rows 
+with missing data at all, and the rows with 9, 10, and 13 missing values
+represent significant missing values. I choose to drop these completely.
+
+```{r}
+age_perception_df <- age_perception_df |>
+  mutate(
+    na_count   = rowSums(is.na(across(starts_with("Age_Perception_"))))
+  )|>
+  filter(na_count < 9 ) |>
+  select(-na_count)
+
+```
+
+## Forward Fill
+
+I use tidyr to fill in the missing values with the previously recorded value. 
+
+The reasoning behind filling with previous numbers is the nature of the 
+question. If a blank exists in the results, we can imply the previous value is 
+correct. Only when the survey participant changes their answer does the next 
+value take place.
+
+For example:
+
+`1 1 1 X 2 2 3`
+
+In this example, we can assume X to be 1.
+
+`1 2 2 3 X X 4`
+
+In this example, we can assume X to be 3.
+
+```{r}
+age_perception_df <- age_perception_df |>
+  # Reshape the Age_Perception columns to long format
+  pivot_longer(
+    cols = starts_with("Age_Perception_"),
+    names_to = "item",
+    values_to = "response"
+  ) |>
+  # Group by survey taker
+  group_by(ID) |>
+  # Forward fill missing values within each respondent
+  fill(response, .direction = "down") |>
+  # Reshape back to wide format
+  pivot_wider(
+    names_from = item,
+    values_from = response
+  )
+```
+
+## Address NA Starts
+
+To address rows that start with NA, I use MICE to impute the missing values.
+
+Note: This analysis only averages the values of the 5 MICE iterations. Since all 
+downstream analysis against this data uses Spearman or Kruskal-Wallis rank-based 
+tests which depend only on value ordering rather than exact magnitudes, 
+averaging is appropriate even when imputation uncertainty exists. Combined with 
+sparse missing data (confined to a small number of leading NAs in a 14-item 
+sequence) and a focus on central tendency rather than precise confidence 
+intervals, this approach is a deliberate choice that balances rigor with 
+simplicity for exploratory analysis.
+
+I create a method vector to tell MICE not to use the ID column as a predictor. 
+It will never be NA, so I don't need to worry about being imputed itself.
+
+```{r}
+#| label: cde-ap-CreatePredictorMatrix}
+
+pred <- make.predictorMatrix(age_perception_df)
+pred[,"ID"] <- 0
+pred[, "respondent_age"] <- 0
+```
+
+## Run mice with 5 Iterations
+
+I run MICE to create 5 iterations of analysis where missing items are filled.
+I specify a seed so I can always be given matching results.
+
+```{r}
+#| label: cde-ap-MICEAnalysis
+#| output: false
+#| include: true
+
+imputed <- mice(age_perception_df, 
+                method = "pmm", 
+                predictorMatrix = pred,
+                m = 5, 
+                seed = 53421)
+```
+
+## Extract the completed data back into our age_perception dataframe.
+
+Here I take values from the MICE iterations and replace the NA values with the 
+averaged predictions.
+
+```{r}
+#| label: cde-ap-AddMICEResults
+
+age_perception_df <- complete(imputed, "long") |>
+  group_by(.id) |>
+  summarise(
+    ID = first(ID),
+    respondent_age = first(respondent_age),
+    across(starts_with("Age_Perception_"), ~ round(mean(.x)))
+  ) |>
+  select(-'.id')
+
+```
+
+## Post Data Frame Manipulation Information:
+
+Any NAs in age perception data frame: ***`r anyNA(age_perception_df)`***
+
+Number of Research Participants for Age Perception Analysis is: 
+***`r nrow(age_perception_df)`***
+
+## Save Out Age Perception Data Frame
+We will be using this cleaned data frame in our Correlation Analysis.
+
+```{r}
+#| label: cde-ap-SaveDataFrame
+
+saveRDS(age_perception_df, 
+        "age_perception_df.rds")
+```
+
+## Create Pivot Of Data Frame
+
+I pivot the data frame in a format where I can group by the different age
+groupings.
+
+
+```{r}
+#| label: cde-ap-ReshapeDataFrame
+
+# Reshape to long format
+df_long <- age_perception_df |>
+  pivot_longer(
+    cols = starts_with("Age_Perception_"),
+    names_to = "group",
+    values_to = "rating"
+  ) |>
+  mutate(
+    group_num = as.integer(str_extract(group, "\\d+")),
+    age_group = factor(age_labels[group_num], levels = age_labels)
+  ) |>
+  filter(!is.na(rating))
+```
+
+## Build Summary Dataframe
+
+Build summary data frame for analysis and graphing.
+
+```{r}
+#| label: cde-ap-SummaryDataFrame
+
+df_summary <- df_long |>
+  group_by(age_group) |>
+  summarise(
+    mean_score = mean(rating),
+  )
+```
+
+## Participant Average Age Perception Data
+
+This graph shows the average score for all survey participants with respect to
+the presented age group and their age scale rating. This is an expected 
+semi-linear line that increases as the age group being presented increases.
+
+Important Note: This does not take into consideration the participants own age.
+
+```{r}
+#| label: fig-ap-PerceptionGraph
+#| fig-cap: "At What Age Is Old?"
+#| out-width: "100%"
+#| fig-height: 4
+
+graph_line_chart(df_summary, 
+                'age_group',
+                'mean_score',
+                'Age Group Being Rated', 
+                'Age Scale Rating',
+                y_breaks = 1:5,
+                y_labels = rating_labels,
+                y_limits = c(1,5))
+```
+
+## Heatmap of Respondents
+
+This heatmap gives a better understanding of how each respondent rated the 
+age group. From it there is the same somewhat linear grouping of most
+of the respondents, however there are some outliers exposed by this graph.
+
+Again, this graph does not take into consideration the participants own age.
+
+```{r}
+#| label: fig-ap-heatmap
+#| fig-cap: "Heatmap of Distribution of Age Perception Ratings"
+#| out-width: "100%"
+#| fig-height: 4
+
+graph_heatmap(
+  df          = df_long,
+  x_category  = "age_group",
+  y_category  = "rating",
+  x_label     = "Age Group Being Rated",
+  y_label     = "Age Scale Rating",
+  y_labels    = rating_labels
+)
+```
+
+## Age Group Counts
+
+Again, it is important to reiterate the number of people represented in each of
+the age groups. Because the respondents in the 18-24, 25-34 and 65+ were much
+smaller than the other age groups, the following analysis of age based results
+must be interpreted with caution.
+
+```{r}
+#| label: tbl-ap-AgeGroupCounts
+#| tbl-cap: Number of Participants by Age Group
+
+age_perception_df |>
+  count(respondent_age, name = "Count") |>
+  mutate(Percentage = round(Count / sum(Count) * 100, 1)) |>
+  knitr::kable(col.names = c("Age Group", "N", "%"))
+```
+
+## Age Perception based on own age
+
+These graphs show how each age group rated the age groupings. The number of
+respondents in the 18-24 range, 25-34 range, and 65+ range were limited which
+introduces a larger confidence interval in their graphs.
+
+```{r}
+#| label: fig-ap-LineChart
+#| fig-cap: |
+#|  Perception of Age by Respondent's Own Age<br>
+#|  Each panel shows how that age group rated the 5 age brackets<br>
+#|  Shaded band = 95% Confidence Interval
+#| out-width: "100%"
+#| fig-height: 8
+#| warning: false
+
+df_summary <- df_long |>
+  filter(!is.na(respondent_age)) |>
+  group_by(respondent_age, age_group) |>
+  summarise(
+    mean_score = mean(rating, na.rm = TRUE),
+    se         = sd(rating, na.rm = TRUE) / sqrt(n()),
+    ci_lo      = mean_score - 1.96 * se,
+    ci_hi      = mean_score + 1.96 * se,
+    .groups    = "drop"
+  )
+
+graph_line_chart(
+  df          = df_summary,
+  x_category  = "age_group",
+  y_category  = "mean_score",
+  x_label     = "Age Bracket Being Rated",
+  y_label     = "Mean Perception Score",
+  subtitle    = paste0(
+    ""),
+  facet_var   = "respondent_age",
+  ci_lo       = "ci_lo",
+  ci_hi       = "ci_hi",
+  y_limits    = c(1, 5),
+  y_breaks    = 1:5,
+  y_labels    = rating_labels
+)
+```
+
+## Overlaid Line Chart: Perception of "Old" by Respondent Age
+
+I take the previous graphs and overlay them into one graph so it is easier to 
+see how the age groups compare to each other.
+
+```{r}
+#| label: fig-ap-OverlayChart
+#| fig-cap: |
+#|  Overlay of Repondents Perception of Age by Age Group<br>
+#|  Lines show mean perception score across 14 age brackets and shaded bands 
+#|  represent 95% confidence interval
+#| fig-height: 5
+#| out-width: "100%"
+#| warning: false
+
+graph_line_chart(
+  df          = df_summary,
+  x_category  = "age_group",
+  y_category  = "mean_score",
+  x_label     = "Age Bracket Being Rated",
+  y_label     = "Mean Perception Score",
+  color_var   = "respondent_age",
+  ci_lo       = "ci_lo",
+  ci_hi       = "ci_hi",
+  y_limits    = c(1, 5),
+  y_breaks    = 1:5,
+  y_labels    = rating_labels
+)
+```
+
+# How the groups responded by the numbers
+
+The below table breaks down the survey taker's own age group and how they rated 
+each of the other age groups in terms of old. with the following age labels
+and their values:
+
+* 1 - Very Young
+* 2 - Young
+* 3 - Middle Age
+* 4 - Old
+* 5 - Very Old
+
+
+```{r}
+#| label: tbl-ap-AgeTable
+#| tbl-cap: "Ratings of Each Age Group by Respondents Own Age Group"
+#| out-width: "100%"
+df_summary |>
+  mutate(mean_score = round(mean_score, 2)) |>
+  select(respondent_age, age_group, mean_score) |>
+  tidyr::pivot_wider(
+    names_from  = respondent_age,
+    values_from = mean_score
+  ) |>
+  rename("Age Group Rated" = age_group) |>
+  knitr::kable()
+```
+
+
+## "Old" Threshold by Respondent Age Group
+
+To directly address my first Research Question, the following analysis 
+identifies the first age bracket each respondent rates as "Old" (score ≥ 4) 
+and summarizes those thresholds by the respondent's own age group. If a person's 
+own age influences their perception of oldness, we would expect older 
+respondents to set that threshold later than younger ones.
+
+I build the threshold data frame to hold the information for the analysis and 
+pivot the group by ratings.
+
+```{r}
+#| label: cde-ap-ThresholdCompute
+
+threshold_df <- age_perception_df |>
+  # Reshape from wide (One Column per age bracket) to long (one row per rating)
+  pivot_longer(
+    cols      = starts_with("Age_Perception_"),
+    names_to  = "item",         # Ex: Age_Perception_4
+    values_to = "rating"
+  ) |>
+  mutate(
+    rating      = as.numeric(rating),
+    # Grab the trailing number from the column name to help us sort the results
+    # based on the age.
+    group_num   = as.integer(str_extract(item, "\\d+")),
+    #Map position to human-readable label.
+    age_bracket = factor(age_labels[group_num], levels = age_labels)
+  ) |>
+  # Drop NA Rows or rating is out of allowable numbers
+  filter(!is.na(respondent_age), rating >= 4) |>
+  # For each survey participant, keep the row with the lowest group_numb that is 
+  # still labeled as 'old'.
+  group_by(ID, respondent_age) |>
+  slice_min(group_num, n = 1, with_ties = FALSE) |>
+  ungroup()
+
+# Afterword, we summarize the data by grouping by the respondent age group and
+# finding the average threshold of the determination of an age being 'old'.
+
+threshold_summary <- threshold_df |>
+  group_by(respondent_age) |>
+  summarise(
+    n          = n(),                   # Number of participants in this group
+    median_num = median(group_num),     # Median threshold
+    .groups    = "drop"
+  ) |>
+  # Round median to nearest integer for consistent 
+  # y-axis positioning and labeling.
+  mutate(
+    median_num = round(median_num),
+    median_label = age_labels[median_num]
+  )
+```
+
+## Age Threshold Chart
+
+Here I graph the data that I previously built.
+
+```{r}
+#| label: fig-ap-ThresholdOutput
+#| fig-cap: |
+#|  Threshold of 'Old' by Age<br>
+#|  Median first age bracket rated ≥ 4 (Old) by respondent age group
+#| out-width: "100%"
+#| fig-height: 4
+#| warning: false
+
+threshold_summary <- threshold_summary |>
+  mutate(n_label = paste0("n=", n))
+
+graph_bar_chart(
+  df               = threshold_summary,
+  x_category       = "respondent_age",
+  y_category       = "median_num",
+  label_col        = "median_label",
+  inside_label_col = "n_label",
+  x_label          = "Respondent Age Group",
+  y_label          = "First Age Bracket Rated 'Old'",
+  horizontal       = FALSE,
+  y_limits         = c(0, 14),
+  y_breaks         = 1:14,
+  y_labels         = age_labels
+)
+```
+
+Respondents in the 35–44 age group set the "old" threshold at **56–60**, while 
+all other groups converge on **61–65**. The direction is consistent with what 
+Research Question 1 would predict — younger respondents label "old" slightly 
+earlier — though the difference is modest (one age bracket). Note that the 18–24 
+and 25–34 groups have very small sample sizes (n=2 and n=7 respectively), so 
+those results should be interpreted with caution. 
+
+Further investigation is performed during Correlation Analysis.
+
+## Individual Threshold Scatter Plot
+
+The bar chart above summarizes each age group down to a single median
+threshold, which can obscure how much individual respondents actually vary.
+The scatter plot below shows every respondent's own individual threshold
+(the first age bracket they rated "Old") against their own age group, with a
+loess trend line to visualize the overall direction of the relationship. Both
+variables are ordinal with a limited number of levels, so points are jittered
+slightly to keep overlapping respondents visible.
+
+Because a straight linear regression line would imply a linear relationship
+between two ordinal variables — an assumption not required for the Spearman
+correlation used to test Research Question 1 — a loess smoother is used here
+instead, purely as a visual aid rather than a fitted statistical model.
+
+Statistical analysis will be undertaken in the Correlation section.
+
+```{r}
+#| label: cde-ap-ScatterPrep
+
+threshold_scatter_df <- threshold_df |>
+  mutate(
+    # Numeric position of the respondent's own age group (1 = 18-24 ... 6 = 65+)
+    respondent_age_num = as.integer(respondent_age),
+    # Small jitter so overlapping respondents remain visible
+    respondent_age_jit = jitter(respondent_age_num, amount = 0.15),
+    group_num_jit       = jitter(group_num, amount = 0.3),
+    # Add age bracket label for Y-axis
+    group_label = age_labels[group_num]
+  )
+```
+
+```{r}
+#| label: fig-ap-ThresholdScatter
+#| fig-cap: |
+#|  Individual "Old" Threshold by Respondent Age (Jittered)<br>
+#|  Each point is one respondent's first age bracket rated "Old" (≥ 4);
+#|  dashed line is a loess trend, shown for visual reference only
+#| out-width: "100%"
+#| fig-height: 5
+#| warning: false
+
+graph_scatter(
+  df           = threshold_scatter_df,
+  x_category   = "respondent_age_jit",
+  y_category   = "group_num_jit",
+  x_label      = "Respondent Age Group (1 = 18-24, 6 = 65+)",
+  y_label      = "First Age Bracket Rated 'Old'",
+  trend_line   = TRUE,
+  trend_method = "loess",
+  x_breaks     = 1:6,
+  x_limits     = c(0.5, 6.5),
+  y_breaks     = 1:14,
+  y_labels     = age_labels
+)
+```
+
+## Conclusion
+
+Having limited participation from the 18-24 age group limits the ability to 
+provide better analysis. The participation in the 25-35 and 65+ also leads to
+caution in the interpretation of the results.
+
+There is a strong linear relationship between the age scale rating and the age
+group being rated.  I also start to see some visual elements that support 
+Research Question 1 in the Individual Threshold Scatter Plot. Further 
+correlation analysis is needed and performed in the Correlation section.

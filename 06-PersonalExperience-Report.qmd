@@ -1,0 +1,241 @@
+# Personal Experience
+
+This section is focused around the personal experience of ageism of survey
+participants. The answers to this question will help in our evaluation of how
+ageist the IT industry is along with the Fraboni analysis.
+
+```{r}
+#| label: set-pe-Setup
+#| include: false
+#| echo: false
+
+library('tidyverse')
+library('ggthemes')
+
+source("_graph_standards_bar.R")
+
+main_df <- readRDS("main_df.rds")
+```
+
+## Vector Definitions
+
+```{r}
+#| label: vdf-pe-VectorDefinitions
+
+# These vectors are used to be able to see the question being asked of the 
+# participant.
+
+pe_question_labels <- c(
+  "Personal_Experience_1"  = "Age prevented a promotion",
+  "Personal_Experience_2"  = "Age prevented receiving training",
+  "Personal_Experience_3"  = "Age prevented getting a job",
+  "Personal_Experience_4"  = "Excluded from groups or events due to age",
+  "Personal_Experience_5"  = "Age used against me at work",
+  "Personal_Experience_6"  = "Company wants me to retire soon",
+  "Personal_Experience_7"  = "Harassed at work due to age",
+  "Personal_Experience_8"  = "Uncomfortable at work due to age",
+  "Personal_Experience_9"  = "Let go or fired due to age",
+  "Personal_Experience_10" = "Challenging work given to younger employees"
+)
+```
+
+## Create Personal Experience Data Frame
+
+Create a Personal Experience data frame with ID, Age, and answers to the 10 
+Personal Experience questions. Rows where more than 30% of values are missing 
+are dropped — these represent respondents who skipped the section entirely. 
+Remaining isolated NA values are replaced with "Neither true nor false" as a 
+conservative neutral response.
+
+```{r}
+#| label: cde-pe-CreateDataFrame
+
+personal_experience_df <- main_df |>
+  select(ID, Age, starts_with("Personal_Experience_")) |>
+  filter(rowMeans(is.na(across(everything()))) <= 0.3)
+```
+
+```{r}
+#| label: tbl-pe-NACheck
+#| tbl-cap: Number of Missing Values from the Personal Experience Section
+
+personal_experience_df |>
+  mutate(na_count = rowSums(is.na(across(everything())))) |>
+  filter(na_count > 0) |>
+  select(ID, na_count) |>
+  knitr::kable(col.names = c("ID", "Num Missing"))
+
+```
+
+Based on this, I only have one row with NAs in them. I will update these
+responses with a a neutral response.
+
+```{r}
+#| label: cde-pe-FillNAs
+
+personal_experience_df <- personal_experience_df |>
+  mutate(across(starts_with("Personal_Experience_"),
+                ~replace(., is.na(.), "Neither true nor false")))
+```
+
+# Post Dataframe Manipulation Information:
+
+Any NAs in Dataframe: ***`r anyNA(personal_experience_df)`***
+
+Number of Research Participants for Personal Experience Analysis is: 
+***`r nrow(personal_experience_df)`***
+
+## Save Out Personal Experience Data Frame
+We will be using this cleaned data frame in our Correlation Analysis.
+
+```{r}
+#| label: cde-pe-SaveDataFrame
+
+saveRDS(personal_experience_df, 
+        "personal_experience_df.rds")
+```
+
+## Summary of Reported Experiences
+
+The following table shows the percentage of respondents who reported each
+experience as True, Neutral, or False, sorted by the percentage reporting True.
+
+```{r}
+#| label: tbl-pe-Summary
+#| tbl-cap: Response Distribution To Personal Experience Questions
+
+pe_summary <- personal_experience_df |>
+  select(starts_with("Personal_Experience_")) |>
+  summarise(across(everything(), list(
+    True    = ~round(mean(. == "True") * 100, 1),
+    Neutral = ~round(mean(. == "Neither true nor false") * 100, 1),
+    False   = ~round(mean(. == "False") * 100, 1)
+  ))) |>
+  pivot_longer(everything(),
+               names_to  = c("question", "response"),
+               names_sep = "_(?=True|Neutral|False)") |>
+  pivot_wider(names_from = response, values_from = value) |>
+  mutate(label = pe_question_labels[question]) |>
+  arrange(desc(True)) |>
+  select(label, True, Neutral, False)
+
+pe_summary |>
+  knitr::kable(
+    col.names = c("Experience", "True (%)", "Neutral (%)", "False (%)"),
+    align     = c("l", "r", "r", "r")
+  )
+```
+
+## Percentage Reporting True for Each Experience
+
+```{r}
+#| label: fig-pe-AgeistEncounters
+#| fig-cap: |
+#|  Percentage Reporting Each Ageist Experience<br>
+#|  Sorted by prevalence; scale 0–100%
+#| out-width: "100%"
+#| fig-height: 5
+
+pct_true_df <- pe_summary |>
+  mutate(
+    pct_label = paste0(True, "%"),
+    label     = factor(label, levels = label[order(True)])
+  )
+
+graph_bar_chart(
+  df          = pct_true_df,
+  x_category  = "label",
+  y_category  = "True",
+  label_col   = "pct_label",
+  x_label     = "Experience",
+  y_label     = "% Reporting True",
+  horizontal  = TRUE,
+  y_limits    = c(0, 100)
+)
+```
+
+The most commonly reported experience is being denied a job due to age (22.8%),
+followed by promotion barriers (14.9%) and age being used against the respondent
+(13.2%). Overt experiences such as harassment and termination are least common
+(under 5%). This pattern suggests ageism in this sample manifests primarily 
+through employment barriers rather than direct social mistreatment.
+
+## Personal Experience by Age Group
+
+To understand whether older IT workers experience ageism at higher rates, a 
+composite experience score is computed per respondent — the count of questions 
+marked "True." A higher score indicates more reported ageist experiences.
+
+```{r}
+#| label: cde-pe-PersonalExperienceByAgeGroup
+
+pe_score_df <- personal_experience_df |>
+  mutate(across(starts_with("Personal_Experience_"),
+                ~case_when(. == "True" ~ 1L, TRUE ~ 0L))) |>
+  mutate(exp_score = rowSums(across(starts_with("Personal_Experience_")))) |>
+  select(ID, Age, exp_score)
+
+pe_age_summary <- pe_score_df |>
+  group_by(Age) |>
+  summarise(
+    n            = n(),
+    mean_score   = round(mean(exp_score), 2),
+    pct_any      = round(mean(exp_score > 0) * 100, 1),
+    .groups      = "drop"
+  ) |>
+  mutate(
+    score_label = as.character(mean_score),
+    age_label   = str_remove(as.character(Age), " years old")
+  )
+```
+
+```{r}
+#| label: fig-pe-PersonalExperienceGraph
+#| fig-cap: |
+#|  Mean Number of Ageist Experiences by Age Group<br>
+#|  Count of 'True' responses out of 10 possible experiences
+#| fig-height: 5
+#| out-width: "100%"
+
+graph_bar_chart(
+  df          = pe_age_summary,
+  x_category  = "age_label",
+  y_category  = "mean_score",
+  label_col   = "score_label",
+  x_label     = "Respondent Age Group",
+  y_label     = "Mean Experiences Reported",
+  horizontal  = FALSE
+)
+```
+
+```{r}
+#| label: tbl-pe-AgeExperenceTable
+#| tbl-cap: Age Groups and Ageist Experience
+
+pe_age_summary |>
+  select(Age, n, mean_score, pct_any) |>
+  knitr::kable(
+    col.names = c("Age Group", "N", "Mean Score", "% Reporting Any Experience"),
+    align     = c("l", "r", "r", "r")
+  )
+```
+
+## Conclusion
+
+Respondents aged 55–64 and 65+ report the highest mean experience scores (1.23 
+and 1.50 respectively) and the highest rates of reporting at least one ageist 
+experience (38.5% and 37.5%). Middle-aged respondents (35–54) report 
+substantially fewer experiences (mean 0.47–0.58, 23–26% reporting any). The 
+youngest groups (18–34) have very small sample sizes (n=2 and n=8) and should be 
+interpreted with caution.
+
+While the focus of this paper is the impact of ageism on older IT workers, as
+previously mentioned, ageism can be experienced by all age groups with higher
+levels being experienced by both older and younger workers. While caution is
+advised with the low sample size in the younger groups, the data is consistent
+with overall expectations.
+
+The trend among the age groups with the larger sample sizes groups (ages 35+) is 
+consistent with what would be expected if age-based discrimination increases 
+with age in the IT workforce. Formal statistical testing of this relationship 
+will be further analyzed in the Correlations analysis Section.

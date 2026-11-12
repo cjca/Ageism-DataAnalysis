@@ -1,0 +1,454 @@
+# Ageism and Employment
+
+This section takes the Fraboni Scale on Ageism and attempts to make it more
+applicable to an employment scenario. The questions are divided into two
+sections. First, we ask people about their own views of older co-workers to
+assess a level of ageism, and then we ask about their feelings towards 
+continuing education - both in terms of their own skilling up, as well as their
+views of older co-workers value with continuing education.
+
+I will run a Spearman's analysis on the two averages to determine if there is
+any correlation between the two to help answer Research Question 2.
+
+```{r}
+#| label: set-ae-Setup
+#| echo: false
+#| include: false
+
+library('tidyverse')
+library('ggthemes')
+
+source("_recode_likert.R")
+
+source("_graph_standards_bar.R")
+
+main_df <- readRDS("main_df.rds")
+```
+
+## Questions Scale
+
+All questions in this section use a 5 Point Likert Scale with the following 
+point values:
+
+- 1 = Strongly Disagree
+- 2 = Somewhat Disagree
+- 3 = Neither Agree nor Disagree
+- 4 = Somewhat Agree
+- 5 = Strongly Agree
+
+## Vector Definitions
+
+```{r}
+#| label: vdf-ae-VectorDefinitions
+
+# Map to convert Ageism_Employment Likert scale answers to numbers. Includes 
+# both normal and reverse mappings.
+
+ageism_employment_map <- list(
+  normal = c(
+    "Strongly Disagree"          = 1, 
+    "Somewhat Disagree"          = 2,
+    "Neither Agree nor Disagree" = 3,
+    "Somewhat Agree"             = 4, 
+    "Strongly Agree"             = 5
+  ),
+  reverse = c(
+    "Strongly Agree"             = 1,
+    "Somewhat Agree"             = 2, 
+    "Neither Agree nor Disagree" = 3,
+    "Somewhat Disagree"          = 4,
+    "Strongly Disagree"          = 5
+  )
+)
+
+
+# Like the original Fraboni Scale of Ageism, I wanted to create reverse  
+# scaled questions to help add validity to the the questions. This is a 
+# character vector of those reverse scaled questions.
+
+reverse_scale_variables <- c("Ageism_Employment_2",
+                             "Ageism_Employment_5",
+                             "Ageism_Employment_19")
+
+
+# This is a character vector with the questions associated with Continuing 
+# Education questions.
+
+ce_variables <- c("Ageism_Employment_12",
+                  "Ageism_Employment_13",
+                  "Ageism_Employment_14",
+                  "Ageism_Employment_15",
+                  "Ageism_Employment_16",
+                  "Ageism_Employment_17",
+                  "Ageism_Employment_18",
+                  "Ageism_Employment_19")
+
+# Short Label Vectors with Question Wording for graphing purposes. Ageist
+# are the ageist questions and ce are the Continuing Education questions. The
+# [R] indicates Reverse Scaled.
+
+short_labels_ageist <- c(
+  "Ageism_Employment_1"  = "Q1: Forced retirement after a certain age",
+  "Ageism_Employment_2"  = "Q2: Prefer same-age coworkers [R]",
+  "Ageism_Employment_3"  = "Q3: Skills no longer applicable",
+  "Ageism_Employment_4"  = "Q4: Don't understand today's tech",
+  "Ageism_Employment_5"  = "Q5: Enjoy diverse age groups [R]",
+  "Ageism_Employment_6"  = "Q6: Less to offer than younger workers",
+  "Ageism_Employment_7"  = "Q7: Harder to work with",
+  "Ageism_Employment_8"  = "Q8: Prefer same-age socializing",
+  "Ageism_Employment_9"  = "Q9: Older workers didn't save enough",
+  "Ageism_Employment_10" = "Q10: Less technologically savvy",
+  "Ageism_Employment_11" = "Q11: Don't stay current with trends"
+)
+
+short_labels_ce <- c(
+  "Ageism_Employment_12" = "Q12: Important to earn certifications",
+  "Ageism_Employment_13" = "Q13: Older workers w/ CE easier to work with",
+  "Ageism_Employment_14" = "Q14: Staying current is critical to success",
+  "Ageism_Employment_15" = "Q15: Not staying current is biggest issue",
+  "Ageism_Employment_16" = "Q16: CE makes older workers more competent",
+  "Ageism_Employment_17" = "Q17: Higher respect for those who pursue CE",
+  "Ageism_Employment_18" = "Q18: CE important for IT career success",
+  "Ageism_Employment_19" = "Q19: Don't need CE to stay competent [R]"
+)
+```
+
+## Create a data frame specific to Ageism & Employment
+
+Create an Ageism Employment DataFrame with ID and answers to the Ageism 
+Employment questions.
+
+```{r}
+#| label: cde-ae-CreateDataFrame
+
+ageism_employment_df <- main_df |>
+  select(ID, starts_with("Ageism_Employment_"))
+```
+
+## Recode the DataFrame
+
+Re-code the data frame with the associated numbers including those that need to 
+be reverse scored.
+
+```{r}
+#| label: cde-ae-RecodeDataFrame
+
+ageism_employment_df <- recode_likert(ageism_employment_df,
+                                      "Ageism_Employment_",
+                                      ageism_employment_map$normal,
+                                      ageism_employment_map$reverse,
+                                      reverse_scale_variables)
+```
+
+## Cleaning up NA Values.
+
+Investigate the number of NA Values across the data frame.
+
+```{r}
+#| label: tbl-ae-NACounts
+#| tbl-cap: Number of Missing Values from Ageism & Employment Section
+
+ageism_employment_df |> 
+  mutate(na_count = rowSums(is.na(across(everything())))) |>
+  filter(na_count > 0) |>
+  select(ID, na_count) |>
+  knitr::kable(col.names = c("ID", "Num Missing"))
+               
+```
+
+This section has 19 questions and the dataframe has 20 variables. Since the ID 
+represents one of those variables, I am just going to drop every row that has 
+more than 18 NAs since these are clearly unusable in this analysis. Here I build 
+the dataframe with only the results that have less than or equal to 18 responses 
+and verify the results.
+
+```{r}
+#| label: tbl-ae-NewNACounts
+#| tbl-cap: Missing Values after Dropping Significant Entries
+
+ageism_employment_df <- ageism_employment_df |>
+  filter(rowSums(is.na(across(everything()))) <= 18)
+
+ageism_employment_df |> 
+  mutate(na_count = rowSums(is.na(across(everything())))) |>
+  filter(na_count > 0) |>
+  select(ID, na_count) |>
+  knitr::kable(col.names = c("ID", "Num Missing"))
+```
+
+## Further cleanup
+
+The most NAs is 2 with only 7 rows having them at all. Since this section had a 
+neutral answer of '3', we can simply replace these with that value.
+
+```{r}
+#| label: cde-ae-FillNeutrals
+
+ageism_employment_df <- ageism_employment_df |>
+  mutate(across(everything(), ~ replace(., is.na(.), 3)))
+```
+
+## Post Dataframe Manipulation Information:
+
+Any NAs in data frame: ***`r anyNA(ageism_employment_df)`***
+
+Number of Research Participants for Ageism & Employment Analysis is: 
+***`r nrow(ageism_employment_df)`***
+
+## Save Out Ageism Employment Data Frame
+We will be using this cleaned data frame in our Correlation Analysis.
+
+```{r}
+#| label: cde-ae-SaveDataFrame
+
+saveRDS(ageism_employment_df, 
+        "ageism_employment_df.rds")
+```
+
+## Feelings toward Continuing Education
+
+To answer one of my research questions, I need to address participants feelings 
+toward continuing education. These are questions 12 - 19.
+
+```{r}
+#| label: cde-ae-CESetup
+
+ce_df <- ageism_employment_df |>
+  select(ID, all_of(ce_variables))
+
+summary(ce_df)
+```
+
+## Response Distributions
+
+### General Ageist Beliefs (Q1–11)
+
+These questions measure general ageist attitudes toward older workers in the IT
+workplace. All items are scored 1–5 where higher scores indicate stronger 
+agreement with the statement. Reverse-scored items (Q2, Q5) have been recoded so 
+that higher scores remain consistent in direction with the rest of the scale.
+
+```{r}
+#| label: cde-ae-BuildDataFrames
+
+# Calculate the Ageism & Employment averages on the entire question set.
+ae_means <- ageism_employment_df |>
+  select(-ID) |>
+  mutate(across(everything(), ~as.numeric(as.character(.)))) |>
+  summarise(across(everything(), ~mean(., na.rm = TRUE))) |>
+  pivot_longer(everything(), names_to = "question", values_to = "mean") |>
+  mutate(mean_label = as.character(round(mean, 2)))
+
+# Calculate the averages for just the first set of questions.
+# Regular Ageist Type Questions
+ageist_means <- ae_means |>
+  filter(question %in% names(short_labels_ageist)) |>
+  mutate(
+    label = short_labels_ageist[question],
+    # Order levels lowest-to-highest so highest appears at top of horizontal 
+    # chart
+    label = factor(label, levels = label[order(mean)])
+  )
+
+# Calculate the averages for just the last set of questions
+# Continuing Education Based
+ce_means <- ae_means |>
+  filter(question %in% names(short_labels_ce)) |>
+  mutate(
+    label = short_labels_ce[question],
+    label = factor(label, levels = label[order(mean)])
+  )
+```
+
+There is a strong feeling towards a preference of working with like-aged 
+coworkers. Not nearly as strong, but still significant is the preference of
+socializing with like-aged co-workers. The rest of the questions ordered by 
+their strength don't show strong ageist views.
+
+```{r}
+#| label: fig-ae-AgeistBarChart
+#| fig-cap: |
+#|  General Ageist Beliefs Toward Older IT Workers<br>
+#|  Mean response per question (1 = Strongly Disagree 5 = Strongly Agree)
+#| out-width: "100%"
+#| fig-height: 8
+#| warning: false
+
+graph_bar_chart(
+  df          = ageist_means,
+  x_category  = "label",
+  y_category  = "mean",
+  label_col   = "mean_label",
+  x_label     = "Survey Question",
+  y_label     = "Mean Score (1–5)",
+  horizontal  = TRUE
+)
+```
+
+Graphing the same data using a Violin Chart gives us a better idea how responses
+varied to the questions.
+
+Kernel Density Estimate is used here and causes some values outside the scale 
+range not to be displayed. This does not impact the data being displayed.
+
+The wider the graph, the more the responses cluster together. The Box Plot
+inside the clusters indicates the Interquartile Range (IQR) with the darker
+vertical line indicating the median.
+
+```{r}
+#| label: fig-ae-AgeistViolinChart
+#| fig-cap: |
+#|  General Ageist Beliefs Toward Older IT Workers<br>
+#|  Response distribution per question 
+#|  (1 = Strongly Disagree 5 = Strongly Agree)
+#| out-width: "100%"
+#| fig-height: 8
+#| warning: false
+
+ageism_employment_df |>
+  select(-ID) |>
+  mutate(across(everything(), ~as.numeric(as.character(.)))) |>
+  pivot_longer(everything(), names_to = "question", values_to = "score") |>
+  filter(question %in% names(short_labels_ageist)) |>
+  mutate(
+    label = short_labels_ageist[question],
+    label = factor(label, levels = names(sort(tapply(score, label, median))))
+  ) |>
+  ggplot(aes(x = label, y = score)) +
+  geom_violin(fill = "#4472C4", alpha = 0.6, trim = FALSE) +
+  geom_boxplot(width = 0.1, fill = "white", outlier.shape = NA) +
+  coord_flip() +
+  scale_y_continuous(breaks = 1:5, limits = c(0.5, 5.5)) +
+  labs(
+    x = "Survey Question",
+    y = "Score (1–5)"
+  ) +
+  theme_minimal()
+```
+
+### Continuing Education Attitudes (Q12–19)
+
+These questions measure attitudes toward continuing education and its 
+relationship to perceptions of older IT workers. Higher scores indicate stronger 
+agreement that CE is valuable and that older workers who pursue it are viewed 
+more favorably.
+
+```{r}
+#| label: fig-ae-ContinuingEducationAttitudes
+#| fig-cap: |
+#|  Attitudes Toward Continuing Education<br>
+#|  Mean response per question (1 = Strongly Disagree
+#|  "5 = Strongly Agree
+#| fig-height: 8
+#| out-width: "100%"
+
+graph_bar_chart(
+  df          = ce_means,
+  x_category  = "label",
+  y_category  = "mean",
+  label_col   = "mean_label",
+  x_label     = "Survey Question",
+  y_label     = "Mean Score (1–5)",
+  horizontal  = TRUE
+)
+```
+
+## Research Question 2 Analysis
+
+To directly address Research Question 2, a composite score is computed for each
+respondent in both question areas:
+
+* General Ageist Beliefs (Q1–11)
+* Continuing Education Attitudes  (Q12-19)
+
+A Spearman rank correlation is run between them. A negative correlation would 
+support the hypothesis that valuing Continuing Education is associated with 
+holding fewer ageist beliefs toward older IT workers.
+
+Spearman's ρ is used because both composites are means of ordinal Likert 
+responses. No normality assumption is required.
+
+## Composite Scores
+
+```{r AE RQ2 Composite}
+composites <- ageism_employment_df |>
+  mutate(across(-ID, ~as.numeric(as.character(.)))) |>
+  mutate(
+    ageist_composite = rowMeans(across(
+      Ageism_Employment_1:Ageism_Employment_11),
+                                na.rm = TRUE),
+    ce_composite     = rowMeans(
+      across(Ageism_Employment_12:Ageism_Employment_19),
+                                na.rm = TRUE)
+  ) |>
+  select(ID, ageist_composite, ce_composite)
+
+composites |>
+  summarise(
+    across(c(ageist_composite, ce_composite),
+           list(N    = ~sum(!is.na(.)),
+                Mean = ~round(mean(., na.rm = TRUE), 2),
+                SD   = ~round(sd(.,   na.rm = TRUE), 2),
+                Min  = ~round(min(., na.rm = TRUE),  2),
+                Max  = ~round(max(., na.rm = TRUE),  2)))
+  ) |>
+  pivot_longer(everything(),
+               names_to  = c("Scale", "Stat"),
+               names_sep = "_(?=[^_]+$)") |>
+  pivot_wider(names_from = Stat, values_from = value) |>
+  mutate(Scale = case_when(
+    Scale == "ageist_composite" ~ "Ageist Beliefs (Q1–11)",
+    Scale == "ce_composite"     ~ "CE Attitudes (Q12–19)",
+    TRUE                        ~ Scale
+  )) |>
+  knitr::kable(align = c("l", "r", "r", "r", "r", "r"))
+```
+
+The ageist beliefs composite 
+(mean = `r round(mean(composites$ageist_composite), 2)`, 
+SD = `r round(sd(composites$ageist_composite), 2)`) sits well below the scale 
+midpoint of 3.0, confirming the sample generally does not hold strong ageist 
+beliefs. The CE composite (mean = `r round(mean(composites$ce_composite), 2)`, 
+SD = `r round(sd(composites$ce_composite), 2)`) sits above the midpoint, 
+reflecting broad agreement that continuing education is important for ones 
+career.
+
+## Spearman Correlation
+
+I perform the Spearman Correlation against the composite scores of the two 
+question sections.
+
+```{r AE RQ2 Spearman}
+cor_result <- cor.test(composites$ageist_composite,
+                       composites$ce_composite,
+                       method = "spearman",
+                       exact  = FALSE)
+cor_result
+```
+
+## Research Question 2 Interpretation
+
+The Spearman correlation between CE attitudes and ageist beliefs is 
+ρ = `r round(cor_result$estimate, 3)` (p = `r round(cor_result$p.value, 3)`). 
+This is not statistically significant at α being 0.05, and the effect size is 
+negligible.
+
+## Conclusion
+
+Generally people value continuing education in IT.
+
+Generally, people do not have strong ageist views towards their older 
+co-workers.
+
+For Research Question 2 **We fail to reject the null hypothesis.** The data does 
+not support a significant relationship between how strongly a respondent values 
+continuing education and how ageist their general beliefs about older IT workers 
+are.
+
+This is a noteworthy finding. While individual continuing education questions 
+(Q13, Q16) show that respondents believe older workers who pursue continuing 
+education are viewed more favorably, this aggregate analysis suggests that 
+holding positive continuing education attitudes does not translate into 
+measurably lower ageist beliefs at the individual level. The relationship 
+between continuing education and ageism in the IT workforce may be more nuanced 
+than a direct correlation captures, and warrants further investigation.

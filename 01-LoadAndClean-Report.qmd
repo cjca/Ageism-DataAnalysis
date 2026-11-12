@@ -1,0 +1,307 @@
+# Load and Clean the Data
+
+This section focuses on loading and performing an initial cleaning of the data. 
+I limit the processing here to data cleaning which can be utilized by all the 
+following sections. Final data cleaning will occur within their respective
+analysis sections.
+
+```{r LAC Setup, include=FALSE}
+#| echo: false
+library('tidyverse')
+library('naniar')
+```
+
+## Load & Process Data Frame
+
+Load the final data set received from the Qualtrics survey. I let readr try to
+guess the column types, disable the output from that guessing, and set blanks,
+'NA', and 'N/A' values to the internal R value of NA.
+
+```{r LAC Load Data}
+file_path <- "data_final.csv"                   # Final Data File
+
+# Read in the full CSV into a dataframe.
+full_df <- read_csv(file_path,                  # File Path
+                    col_types = NULL,           # Type Guessing Column Types
+                    show_col_types = FALSE,     # Suppress Output of Col Types
+                    na = c("", "NA", "N/A")     # Set these values to NA
+)
+```
+
+## Initial Data Frame Processing
+
+A character vector is created to hold the columns I will not be using in this
+analysis. I then create a new data frame called 'main_df' with the following
+modifications made:
+
+- Removing the top 2 header rows
+- Removing unwanted/unnecessary columns
+- Rename a column that has potentiall problematic characters:
+'Duration (in seconds)' to 'Duration'
+- Update the columns Finished, Progress, and Duration to their respected data 
+types
+- Add an index value and make it the first column in the data frame
+
+```{r LAC Clean Dataframe}
+columns_to_remove <- c("Q_RelevantIDDuplicate",
+                       "Q_RelevantIDDuplicateScore",
+                       "Q_RelevantIDFraudScore",
+                       "Q_RelevantIDLastStartDate",
+                       "ResponseId",
+                       "UserLanguage")
+
+# Create a data frame with only the data we want to process
+main_df <- full_df |> 
+  slice(3:n()) |>                                 # 3rd Observation Onward
+  select(-any_of(columns_to_remove)) |>           # Remove Unwanted Variables
+  rename(Duration = `Duration (in seconds)`) |>   # Rename Variable
+  mutate(
+    ID = 1:n(),                                   # Index Value Auto-Increment
+    Finished = as.logical(Finished),              # Set to Boolean
+    Progress = as.numeric(Progress),              # Set to Numeric
+    Duration = as.numeric(Duration)               # Set to Numeric
+  ) |>                                          
+  relocate(ID)                                    # Make Index First
+```
+
+## Understand Current Observation Counts
+
+I will want to understand how the number of observations changes while I clean
+the data frame. I will keep two variables and update and report on them for 
+every step of the cleaning process. I initialize the variables 'old_count' and 
+'new_count' with the current number of records.
+
+```{r LAC Participant Counts}
+old_count <- nrow(main_df)
+new_count <- nrow(main_df)
+```
+
+- Current Observations: `r new_count`
+
+This represents the number of survey participants before any cleaning has been
+completed.
+
+## Remove Underage Participants
+
+Due to complexities and legalities when working with individuals under 18 years
+of age, I am going to remove them. 
+
+```{r LAC Remove Underage}
+main_df |>
+  filter(Age == 'Under 18') |>
+  nrow()
+```
+We have no survey participants who self-reported as Under 18.
+
+- Removed Observations: `r old_count - new_count`
+- New Observation Count: `r new_count`
+
+## Remove Duplicates
+
+I remove any duplicates that Qualtrics has flagged as a duplicate response. I 
+also remove the column from the data frame after this process is completed.
+
+```{r LAC Remove Duplicates}
+main_df <- main_df |>
+  filter(is.na(Q_DuplicateRespondent)) |>
+  select(-Q_DuplicateRespondent)
+
+old_count <- new_count
+new_count <- nrow(main_df)
+```
+
+- Removed Observations: `r old_count - new_count`
+- New Observation Count: `r new_count`
+
+## Remove Significant NAs
+
+Each of the four survey sections (Age_Perception, Ageism_Employment,
+Fraboni_Scale, Personal_Experience) is scored and cleaned independently using 
+methods appropiate for the data in their sections. Survey takers who enter data 
+in a single section is potentially meaningful, and a respondent should not be 
+disqualified from the overall results because they skipped other sections.
+
+For that reason, at this stage I only remove respondents who provided no
+usable data across any of the four sections. These represent participants who
+essentially abandoned the survey immediately after the demographic questions
+and have nothing for any downstream section to analyze.
+
+```{r LAC Remove Major NAs}
+survey_question_prefixes <- c("Age_Perception", 
+                              "Ageism_Employment",
+                              "Fraboni_Scale", 
+                              "Personal_Experience")
+
+# Per-section NA proportion for every respondent (one column per section) 
+section_na_pct <- map(
+  survey_question_prefixes, function(p) {
+    main_df |>
+      select(starts_with(p)) |>
+      is.na() |>
+      rowMeans()
+    }
+  ) |>
+  set_names(survey_question_prefixes) |>
+  as_tibble()
+
+# Keep respondents unless they are 100% missing in every single section
+main_df <- main_df |>
+  filter(rowSums(section_na_pct == 1) < length(survey_question_prefixes))
+
+old_count <- new_count
+new_count <- nrow(main_df)
+```
+
+- Removed Observations: `r old_count - new_count`
+- New Observation Count: `r new_count`
+
+## Remove Speed-Through & Abandoned
+
+Participants who completed the survey in under 3 minutes likely represent 
+click-through respondents where the quality of the received data are likely very 
+poor. Responses exceeding 4 hours suggest the survey was abandoned. Both are 
+removed from the data frame due to potential low-quality responses.
+
+```{r LAC Remove Time Based Constraints}
+main_df <- main_df |>
+  filter(Duration >= 180, Duration <= 14400)
+
+old_count <- new_count
+new_count <- nrow(main_df)
+```
+
+- Removed Observations: `r old_count - new_count`
+- New Observation Count: `r new_count`
+
+
+## Examine no response for Age
+
+I want to look for any participants who did not specify an age after all the
+previous cleaning was performed. 
+
+```{r LAC Check for NA for Age}
+main_df |>
+  filter(is.na(Age)) |>
+  nrow()
+```
+
+Since no further participants remain that did not specify an age, the data frame
+at this time contains participants who provided an age.
+
+## Update The Date Format
+
+Update all date variables to the R standard format using the lubridate package 
+with the timezone set to America/Chicago which is the timezone set in my 
+Qualtrics profile.
+
+```{r LAC Update Date Format}
+main_df <- main_df |>
+  mutate(across(c(StartDate, EndDate, RecordedDate), 
+                ~ ymd_hms(.x, tz = "America/Chicago")))
+```
+
+## Factor The Character Columns
+
+Most character columns are categorical and can take advantage of being factored.
+I create a character vector with the variables I plan to factor. I then perform
+the factoring of the variables.
+
+```{r LAC CV Variables To Factor}
+vars_to_factor <- c("Age",
+                    "Gender",
+                    "Country",
+                    "Education",
+                    "IT_Field",
+                    "IT_Industry",
+                    "Status")
+
+main_df <- main_df |>
+  mutate(across(all_of(vars_to_factor), as.factor))
+```
+
+## Set Ordered Levels For Ordinal Factors
+
+Unlike the previous factored variables, the variables Age and Education are 
+ordinal variables — their categories have a meaningful low-to-high order. 
+Setting them as ordered factors here ensures all downstream analyses and graphs 
+sort and interpret them correctly without additional recoding. This will be 
+especially important in the Spearman correlations later.
+
+```{r LAC Set Ordinals}
+main_df <- main_df |>
+  mutate(
+    Age = factor(Age,
+      levels = c(
+        "18-24 years old",
+        "25-34 years old",
+        "35-44 years old",
+        "45-54 years old",
+        "55-64 years old",
+        "65+ years old"
+      ),
+      ordered = TRUE
+    ),
+    Education = factor(Education,
+      levels = c(
+        "Some high school or no formal schooling",
+        "High school diploma, GED or equivalent",
+        "Some college, but no degree",
+        "Associates, vocational, technical degree or equivalent",
+        "Bachelor's degree or equivalent",
+        "Graduate degree (MA, MS, MBA, etc.)",
+        "Terminal degree (PhD, EdD, JD, MD, DDS, etc.)"
+      ),
+      ordered = TRUE
+    )
+  )
+```
+
+## Inspect The data frame
+
+At this point, I display a summary of the data frame I have performed the
+initial cleaning on to see if there are any issues that should be addressed.
+
+```{r LAC Print Summary}
+summary(main_df)
+```
+
+## Save out the Data Frame
+
+The data frame has been cleaned to a point where the data are usable in future 
+analysis. I save out the data frame in RDS format for input into each of the 
+different sections of this analysis so they can be independently processed.
+
+```{r LAC Save DataFrame}
+saveRDS(main_df, "main_df.rds")
+```
+
+## Conclusion
+Data from Qualtrics were loaded and an initial cleaning was performed. At this
+point not all NA values have been addressed as they will be looked at and
+addressed appropriately in their respective sections.
+
+### Cleaning Performed:
+
+- Removed CSV headers
+- Removed unwanted and unnecessary columns
+- Updated column names to address problematic characters
+- Updated the columns Finished, Progress, and Duration to their data types
+- Added an index and made it the first column in the data frame
+- Removed ineligible participants (under 18 and unidentified)
+- Removed duplicates identified by Qualtrics
+- Removed observations with excessive NAs
+- Removed outlier timed submissions
+- Standardized all date formats
+- Factored character columns
+- Set ordered levels for ordinal factors
+
+### Final Response Counts:
+
+| | Count |
+|---|---|
+| Original responses | 166 |
+| Removed during initial cleaning | `r 166 - nrow(main_df)` |
+| Final analytic sample | `r nrow(main_df)` |
+: Participant Survey Results {#tbl-participant-survey-results 
+  data-quarto-disable-processing="true"}
+

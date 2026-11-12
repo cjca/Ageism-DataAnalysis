@@ -1,0 +1,649 @@
+# Correlation Analysis
+
+In this section I perform some further in-depth analysis looking for further
+correlations between the different metrics we have obtained and calculated.
+
+```{r}
+#| label: set-ca-Setup
+#| echo: false
+#| include: false
+
+library('tidyverse')
+library('ggthemes')
+library('broom')
+library('papaja')
+
+source("_recode_likert.R")
+
+source("_graph_standards_bar.R")
+source("_graph_standards_scatter.R")
+
+main_df <- readRDS("main_df.rds")
+```
+
+## Data Preparation
+
+The data frames previously saved out are loaded here performing some data
+manipulation as appropriate. All modifications are documented in their
+respective data frame load.
+
+```{r}
+#| label: cde-ca-LoadCleanedDataFrames
+
+# For Fraboni Scores, I load the data frame from the file and only keep the
+# following columns: ID, Total_Score, Disc_Score, Avoid_Score and AntiLoc_Score
+
+fraboni_scores <- readRDS("fraboni_df.rds") |>
+    select(ID, Total_Score, Disc_Score, Avoid_Score, AntiLoc_Score)
+
+# For Personal Experience, we load the data frame from the file and do the
+# following:
+# - Drop Age
+# - Change 'True' to 1, 'Neither true nor false' to 0, and 'False' to -1.
+# - Average the numbers and put them in a pe_composite column.
+# - Default to 'No Opinion' if blank
+# - Return only the ID and Composite Score.
+
+pe_scores <- readRDS("personal_experience_df.rds") |>
+  select(-Age) |>
+  mutate(across(-ID, ~case_when(
+    . == "True"                   ~  1,
+    . == "Neither true nor false" ~  0,
+    . == "False"                  ~ -1,
+    TRUE                          ~  0
+  ))) |>
+  mutate(
+    pe_composite = rowMeans(across(starts_with("Personal_Experience_")))
+  ) |>
+  select(ID, pe_composite)
+
+# For Ageism in Employment, we load the data frame from the file and do the
+# following:
+# - Convert everything to Numeric (Ignoring 'ID')
+# - Create Averages for Ageist Questions
+# - Create Averages for Continuing Education Questions
+# - Only save the ID and the two averages above.
+
+ae_scores <- readRDS("ageism_employment_df.rds") |>
+  mutate(across(-ID, ~as.numeric(.))) |>
+  mutate(
+    ageist_composite = rowMeans(
+      across(Ageism_Employment_1:Ageism_Employment_11)
+    ),
+    ce_composite = rowMeans(
+      across(Ageism_Employment_12:Ageism_Employment_19)
+    )
+  ) |>
+  select(ID, ageist_composite, ce_composite)
+
+# For Age Perception, we load the data frame from the file and create an
+# average composite score column and save only the ID and composite score.
+
+ap_scores <- readRDS("age_perception_df.rds") |>
+  mutate(ap_composite = rowMeans(across(starts_with("Age_Perception_")))) |>
+  select(ID, ap_composite)
+
+```
+
+### Build Master Analysis Data Frame
+
+I combine the unique data frames into one master data frame for analysis. One
+important note is I add age_num and educ_num as the associated integer based
+on the ordered values we previously defined during our Load and Clean.
+
+```{r}
+#| label: cde-ca-BuildMasterDataFrame
+
+master_df <- main_df |>
+  select(ID, Age, Education, Gender, IT_Field, IT_Industry) |>
+  mutate(
+    age_num  = as.integer(Age),
+    educ_num = as.integer(Education)
+  ) |>
+  inner_join(fraboni_scores, by = "ID") |>
+  left_join(ae_scores,  by = "ID") |>
+  left_join(pe_scores,  by = "ID") |>
+  left_join(ap_scores,  by = "ID")
+```
+
+```{r}
+#| label: tbl-ca-NACheck
+#| tbl-cap: Number of Missing Values from the Correlation Analysis Section
+
+master_df |>
+  mutate(na_count = rowSums(is.na(across(everything())))) |>
+  filter(na_count > 0) |>
+  select(ID, na_count) |>
+  apa_table(col.names = c("ID", "Num Missing"), caption="TESTTTTT")
+```
+
+```{r}
+#| label: tbl-ca-NAColumnCheck
+#| tbl-cap: Column Names with number of NAs in them
+colSums(is.na(master_df))[colSums(is.na(master_df)) > 0] |>
+  knitr::kable(col.names = c("Column Name", "Num Missing"))
+```
+
+### Update NAs
+
+The only NA is from Participant 126 with their Personal Experience Score being 
+previously dropped due to insufficient data. I will set their score to a neutral 
+score of 0.
+
+Note: This is the composite score ranging from -1 to 1 with zero being neutral.
+
+```{r}
+#| label: cde-ca-ReplaceNAsWithZero
+master_df <- master_df |>
+  mutate(pe_composite = replace_na(pe_composite, 0))
+```
+
+### Post Data Frame Manipulation Information:
+
+Any NAs in the Master data frame: ***`r anyNA(master_df)`***
+
+Number of Research Participants for Master analysis is: 
+***`r nrow(master_df)`***
+
+## Overview
+
+This analysis tests for correlations between all major variables collected in 
+the survey and the Fraboni Ageism Score of the participant. I also look at 
+cross-scale relationships relevant to each research question. 
+
+Two statistical methods are used:
+
+- **Spearman's ρ (rho) ** This method is used for ordinal and continuous 
+variables — no normality assumption required. Items addressed by Spearman's have 
+a natural order and it doesn't require the data to have a perfect bell curve. I
+use this method to see if ageism increases or decreases as the variable changes.
+
+  ie: As education level goes up, does the ageism score rise, fall or stay the 
+  same.
+
+  Spearman's will give a +1 to -1 result where the strength and direction of the
+  relationship is addressed. A result near +1 shows ageism increases as the
+  variable increases. A result near -1 shows ageism decreases as the variable
+  increases. Anything near 0 shows no clear relationship exists.
+
+- **Kruskal-Wallis ** for nominal grouping variables (Gender, IT Field, IT 
+Industry). I use this when there is no natural order to the variables. I use 
+this method to see if any groups score differently from each other.
+
+  ie: Do people in different IT Fields have different Ageism Scores?
+
+  Kruskal-Wallis will provide an H Statistic and a p value. If we find a p value
+  of less that 0.05, I will investigate further to find out which group was
+  identified as different.
+
+
+## Research Question 1
+
+**Does a Respondent's Age Predict Their Perception of "Old"?**
+
+Research Question 1 asks whether a person's own age is associated with the age 
+at which they consider someone "old." The Age Perception composite score 
+represents the mean rating a respondent assigned across all 14 age brackets 
+(1 = Very Young, 5 = Very Old). A lower composite means the respondent rates 
+people as younger overall — i.e., they have a higher threshold for "old."
+
+Spearman will be used as the participant's age is ordered data.
+
+```{r}
+#| label: cde-ca-RQ1Spearman
+rq1_result <- cor.test(master_df$age_num, 
+                       master_df$ap_composite,
+                       method = "spearman", 
+                       exact = FALSE)
+rq1_result
+
+# Used to label the graph in the next code chunk.
+rq1_cap <- paste0(
+  "Respondent Age vs. Perception of Age<br>",
+  "Spearman ρ = ", round(rq1_result$estimate, 3),
+  ", p = ", round(rq1_result$p.value, 4))
+```
+
+```{r}
+#| label: fig-ca-RQ1ScatterPlot
+#| fig-cap: !expr rq1_cap
+#| fig-height: 5
+#| out-width: "100%"
+
+graph_scatter(
+  df             = master_df |> filter(!is.na(ap_composite)),
+  x_category     = "age_num",
+  y_category     = "ap_composite",
+  x_label        = "Respondent Age Group (1 = 18–24, 6 = 65+)",
+  y_label        = "Mean Age Perception Score (1–5)",
+  trend_line     = TRUE,
+  trend_method   = "lm",
+  x_breaks       = 1:6,
+  x_limits       = c(1, 6) 
+)
+```
+
+**Research Question 1 Finding**: There is a statistically significant negative 
+correlation between respondent age and mean age perception score 
+(ρ = `r round(rq1_result$estimate, 3)`, p = `r round(rq1_result$p.value, 4)`). 
+Older respondents consistently rate age brackets as younger. In other words they 
+require someone to be older before considering them "old." This supports
+Research Question 1: a person's own age does influence their perception of what 
+constitutes oldness. The effect is moderate and consistent with the threshold 
+analysis reported in Section 3, where respondents aged 35–44 placed the "old" 
+threshold at 56–60 while older groups converged on 61–65.
+
+## Demographic Predictors of Fraboni Score
+
+### Age vs Fraboni Score
+
+Spearman will be used as the participant's age is ordered data. I am comparing
+the respondent's age to their Fraboni Total Score.
+
+```{r}
+#| label: tbl-ca-AgeVsFraboni
+#| tbl-cap: Age vs Fraboni Correlation Test
+
+age_cor <- cor.test(master_df$age_num, 
+                    master_df$Total_Score,
+                    method = "spearman", 
+                    exact = FALSE) 
+
+age_cor |>  
+  tidy() |>
+  select(estimate, statistic, p.value) |>
+  mutate(across(everything(), ~round(., 4))) |>
+  knitr::kable(col.names = c("ρ", "S", "p-value"))
+```
+
+**Conclusion**: Age is not significantly correlated with Fraboni Total Score
+(ρ = `r round(age_cor$estimate, 3)`, p = `r round(age_cor$p.value, 4)`), 
+consistent with the ANOVA result reported in Section 4. The direction is 
+slightly negative, but the effect is negligible.
+
+### Education vs Fraboni Score
+
+Spearman will be used as the participant's education is ordered data. I am 
+comparing the respondent's education to their Fraboni Total Score.
+
+```{r}
+#| label: tbl-ca-EducationVsFraboni
+#| tbl-cap: Education vs Fraboni Correlation Test
+
+educ_cor <- cor.test(master_df$educ_num, 
+                     master_df$Total_Score,
+                     method = "spearman", 
+                     exact = FALSE)
+
+educ_cor |>  
+  tidy() |>
+  select(estimate, statistic, p.value) |>
+  mutate(across(everything(), ~round(., 4))) |>
+  knitr::kable(col.names = c("ρ", "S", "p-value"))
+```
+
+**Conclusion**: Education level is not significantly associated with Fraboni 
+score (ρ = `r round(educ_cor$estimate, 3)`, p = `r round(educ_cor$p.value, 4)`). 
+Higher levels of formal education do not appear to reduce ageist attitudes in 
+this sample.
+
+### Gender vs Fraboni Score
+
+Kruskal-Wallis is used because gender is not ordered. We limit this analysis
+to only those who reported Male and Female due to the limited sample size for
+the other options.
+
+```{r}
+#| label: tbl-ca-GenderVsFraboniKW
+#| tbl-cap: Gender vs Fraboni Correlation Test
+
+# Limit to Male/Female (n too small for other categories)
+gender_df <- master_df |>
+  filter(Gender %in% c("Male", "Female")) |>
+  mutate(Gender = droplevels(Gender))
+
+# Run the Kruskal-Wallis Test against Fraboni Score vs Gender
+gender_kw <- kruskal.test(Total_Score ~ Gender, 
+                          data = gender_df)
+
+# Show the result of the Kruskal-Wallis Test
+# Degrees of Freedom, H Statistic and p-value.
+# Note: This needs to be piped through Broom::Tidy because the data is in
+# htest format, not a data frame. Tidy will convert it for me.
+
+gender_kw |>  
+  tidy() |>
+  select(parameter, statistic, p.value) |>
+  mutate(across(everything(), ~round(., 4))) |>
+  knitr::kable(col.names = c("Degrees of Freedom", 
+                             "H Statistic (χ²)", 
+                             "p-value"))
+```
+
+```{r}
+#| label: tbl-ca-GenderVsFraboniMeans
+#| tbl-cap: Gender vs Fraboni by Gender Mean Scores
+
+# For each gender group, calculate number of respondents, their Average Fraboni 
+# Total Score rounded to one decimal, A Label for the chart, and clean up the
+# grouping.
+gender_means <- gender_df |>
+  group_by(Gender) |>
+  summarise(n = n(),
+            mean_score   = round(mean(Total_Score), 1),
+            score_label  = as.character(round(mean(Total_Score), 1)),
+            .groups = "drop")
+
+gender_means |>  
+  select(Gender, n, mean_score) |>
+  mutate(mean_score = round(mean_score, 4)) |>
+  knitr::kable(col.names = c("Gender", "Count", "Mean Score"))
+
+```
+
+```{r}
+#| label: fig-ca-GenderChart
+#| fig-cap: "Mean Fraboni Score by Gender"
+#| fig-height: 5
+#| out-width: "100%"
+
+graph_bar_chart(
+  df          = gender_means,
+  x_category  = "Gender",
+  y_category  = "mean_score",
+  label_col   = "score_label",
+  x_label     = "Gender",
+  y_label     = "Mean Fraboni Score",
+  horizontal  = FALSE
+)
+```
+
+**Conclusion**: Gender is not a significant predictor of Fraboni score 
+(χ² = `r round(gender_kw$statistic, 3)`, p = `r round(gender_kw$p.value, 4)`). 
+Female respondents have a slightly higher mean score (52.5) than male 
+respondents (50.2), but the difference is not statistically significant.
+
+### IT Field and IT Industry
+
+Again Kruskal-Wallis is used because neither IT Field or IT Industry are
+ordered. 
+
+```{r}
+#| label: cde-ca-IndustryAndFieldKWTest
+
+# Run the Kruskal-Wallis Test against IT Field and Total Fraboni Score
+field_kw <- kruskal.test(Total_Score ~ IT_Field,    
+                         data = master_df)
+
+# Run the Kruskal-Wallis Test against IT Industry and Total Fraboni Score
+industry_kw <- kruskal.test(Total_Score ~ IT_Industry, 
+                            data = master_df)
+```
+
+```{r}
+#| label: tbl-ca-FraboniVsITIndustryAndField
+#| tbl-cap: Fraboni Score vs IT Industry
+
+bind_rows(
+  field_kw |> tidy() |> mutate(Group = "IT Field"),
+  industry_kw |> tidy() |> mutate(Group = "IT Industry")
+) |>
+  select(Group, parameter, statistic, p.value) |>
+  mutate(
+    statistic = round(statistic, 3),
+    p.value   = round(p.value, 4)
+  ) |>
+  knitr::kable(col.names = c("Group", 
+                             "Degrees of Freedom", 
+                             "H Statistic (χ²)", 
+                             "p-value"))
+```
+
+**Conclusion**: Neither IT Field (χ² = `r round(field_kw$statistic, 3)`, 
+p = `r round(field_kw$p.value, 4)`) nor IT Industry 
+(χ² = `r round(industry_kw$statistic, 3)`, 
+p = `r round(industry_kw$p.value, 4)`) is significantly associated with ageism 
+level. Note that several groups contain very few respondents (n \< 5), which 
+limits the power of these tests to detect real differences.
+
+## Scale Predictors of Fraboni Score
+
+### Ageism Employment Beliefs (Q1–11) vs Fraboni
+
+I compare the first questions in the Ageism Employment survey associated with 
+Ageism Employment Beliefs with the Fraboni Total Score. Spearman is used since
+the Ageist Score is ordered data.
+
+```{r}
+#| title: cde-ca-AgeismEmployentAndFraboni
+
+ae_cor <- cor.test(master_df$ageist_composite, 
+                   master_df$Total_Score,
+                   method = "spearman", 
+                   exact = FALSE)
+ae_cor
+
+# Used to label the graph in the next code chunk.
+ae_cap <- paste0(
+  "Workplace Ageist Beliefs vs. Fraboni Ageism Score<br>",
+  "Spearman ρ = ", round(ae_cor$estimate, 3),
+  ", p = ", round(ae_cor$p.value, 4))
+
+```
+
+```{r}
+#| title: fig-ca-AgeismEmploymentFraboniGraph
+#| fig-cap: !expr ae_cap
+#| out-width: "100%"
+
+graph_scatter(
+  df          = master_df |> filter(!is.na(ageist_composite)),
+  x_category  = "ageist_composite",
+  y_category  = "Total_Score",
+  x_label     = "Ageist Beliefs Composite (AE Q1–11)",
+  y_label     = "Fraboni Total Score",
+  trend_line  = TRUE
+)
+```
+
+**Conclusion: This is the strongest finding in the analysis.** Workplace ageist 
+beliefs (AE composite Q1–11) are strongly and significantly correlated with 
+Fraboni ageism score (ρ = `r round(ae_cor$estimate, 3)`, p \< 0.001). 
+Respondents who agree with ageist statements about older IT workers — that their 
+skills are outdated, that they are harder to work with, or that they contribute 
+less — also score substantially higher on the Fraboni general ageism scale.
+
+This finding has two important implications: it validates both instruments as 
+measuring related constructs, and it identifies workplace ageist beliefs as the 
+single strongest predictor of overall ageism level in this sample.
+
+### Continuing Education Attitudes (Q12–19) vs Fraboni
+
+I do the same analysis as previously done except with the last set of questions
+in the Ageism Employment section. Again, Spearman is used due to the ordered
+nature of the scale.
+
+```{r}
+#| label: tbl-ca-CEvsFraboni
+#| tbl-cap: Fraboni Score vs Continuing Education
+
+ce_cor <- cor.test(master_df$ce_composite, 
+                   master_df$Total_Score,
+                   method = "spearman", 
+                   exact = FALSE)
+ce_cor |>  
+  tidy() |>
+  select(estimate, statistic, p.value) |>
+  mutate(across(everything(), ~round(., 4))) |>
+  knitr::kable(col.names = c("ρ", "S", "p-value"))
+```
+
+**Conclusion**: Continuing Education attitudes are not significantly correlated 
+with Total Fraboni score (ρ = `r round(ce_cor$estimate, 3)`, 
+p = `r round(ce_cor$p.value, 4)`). Combined with the non-significant result from 
+Section 5 (Continuing Education attitudes vs. Ageist Beliefs), this consistently 
+indicates that valuing continuing education does not translate into measurably 
+lower ageism in this sample.
+
+### Personal Experience of Ageism vs. Fraboni
+
+I want to see if a person's own experience with Ageism might impact their own
+ageist views.
+
+```{r}
+#| label: tbl-ca-PEvsFraboni
+#| tbl-cap: Fraboni Score vs Personal Experience
+
+pe_cor <- cor.test(master_df$pe_composite, 
+                   master_df$Total_Score,
+                   method = "spearman", 
+                   exact = FALSE)
+pe_cor |>  
+  tidy() |>
+  select(estimate, statistic, p.value) |>
+  mutate(across(everything(), ~round(., 4))) |>
+  knitr::kable(col.names = c("ρ", "S", "p-value"))
+```
+
+**Conclusion**: Personal experience of workplace ageism is not significantly 
+correlated with Total Fraboni score 
+(ρ = `r round(pe_cor$estimate, 3)`, p = `r round(pe_cor$p.value, 4)`). 
+Respondents who have personally experienced ageist treatment do not score 
+consistently higher or lower on general ageism than those who have not.
+
+### Age Perception Composite vs. Fraboni
+
+I want to look at whether the perception of age influences ageist views or not.
+
+```{r}
+#| label: tbl-ca-APvsFraboni
+#| tbl-cap: Fraboni Score vs Age Perception
+
+ap_cor <- cor.test(master_df$ap_composite, 
+                   master_df$Total_Score,
+                   method = "spearman", 
+                   exact = FALSE)
+
+ap_cor |>  
+  tidy() |>
+  select(estimate, statistic, p.value) |>
+  mutate(across(everything(), ~round(., 4))) |>
+  knitr::kable(col.names = c("ρ", "S", "p-value"))
+```
+
+**Conclusion**: Mean age perception score (how respondents rate general age 
+brackets) is not significantly correlated with Fraboni score 
+(ρ = `r round(ap_cor$estimate, 3)`, 
+p = `r round(ap_cor$p.value, 4)`). Rating people as "older" does not correspond 
+to higher general ageism.
+
+## Summary of All Correlations
+
+```{r}
+#| label: tbl-ca-SummaryTable
+#| tbl-cap: Summary Table
+
+summary_table <- tribble(
+  ~Variable, ~Method, ~Statistic, ~p_value, ~Significant,
+  "Age (ordinal)", "Spearman ρ", round(age_cor$estimate, 3), 
+  round(age_cor$p.value, 4), "No",
+  "Education (ordinal)", "Spearman ρ", round(educ_cor$estimate,   3),
+  round(educ_cor$p.value, 4), "No",
+  "Gender", "Kruskal-Wallis", round(gender_kw$statistic, 3),       
+  round(gender_kw$p.value,4), "No",
+  "IT Field", "Kruskal-Wallis", round(field_kw$statistic, 3),
+  round(field_kw$p.value, 4), "No",
+  "IT Industry", "Kruskal-Wallis", round(industry_kw$statistic, 3),
+  round(industry_kw$p.value, 4), "No",
+  "Ageist Beliefs (AE Q1–11)", "Spearman ρ", round(ae_cor$estimate, 3),
+  round(ae_cor$p.value, 4), "Yes",
+  "CE Attitudes (AE Q12–19)", "Spearman ρ", round(ce_cor$estimate, 3),
+  round(ce_cor$p.value, 4), "No",
+  "Personal Experience", "Spearman ρ", round(pe_cor$estimate, 3),       
+  round(pe_cor$p.value, 4), "No",
+  "Age Perception (mean score)", "Spearman ρ", round(ap_cor$estimate, 3),
+  round(ap_cor$p.value, 4), "No",
+  "RQ1: Age → Age Perception", "Spearman ρ", round(rq1_result$estimate, 3),
+  round(rq1_result$p.value, 4), "Yes"
+)
+
+summary_table |>
+  knitr::kable(
+    col.names = c("Variable", 
+                  "Method", 
+                  "Statistic (ρ or H)", 
+                  "p-value", 
+                  "Significant"),
+    align     = c("l", 
+                  "l", 
+                  "r", 
+                  "r", 
+                  "c")
+  )
+```
+
+## Overall Conclusions
+
+### Research Question 1
+**Does a person's own age influence their perception of what constitutes 
+"old"?**
+
+**Supported, with a moderate effect.** Respondent age is negatively correlated 
+with mean age perception score (ρ = `r round(rq1_result$estimate, 3)`,
+p = `r round(rq1_result$p.value, 4)`), meaning older respondents consistently 
+rate age brackets as younger — they require someone to be older before labeling 
+them "old." This is corroborated by the threshold analysis in Section 3, where
+respondents aged 35–44 set the "old" threshold at 56–60 while all older age 
+groups converged on 61–65. The sample sizes for the youngest age groups are very 
+small, so this finding should be interpreted cautiously. It is consistent across 
+both analyses and warrants replication with a larger, more evenly distributed 
+sample.
+
+### Research Question 2
+**Does continuing education impact perceptions of older IT workers?**
+
+**Not supported.** Two separate tests address this question. First, Continuing 
+Education attitudes (Ageism Emloyment Q12–19 composite) are not significantly 
+correlated with ageist workplace beliefs (Ageism Employment Q1–11 composite) 
+(ρ = 0.134, p = 0.128; reported in Section 5). 
+Second, Continuing Education attitudes are not significantly correlated with 
+overall Fraboni ageism score (ρ = `r round(ce_cor$estimate, 3)`, 
+p = `r round(ce_cor$p.value, 4)`). Neither test approaches significance, and the 
+effect sizes are negligible.
+
+This is a notable null result. Respondents in this sample hold strong 
+pro-Continuing Education attitudes (mean Continuing Education composite = 
+3.65/5) and low ageist beliefs (mean ageist composite = 2.02/5), yet these two 
+attitudes do not significantly co-vary at the individual level. The relationship 
+between valuing continuing education and holding less ageist views may be more 
+complex than a direct correlation captures — for instance, it may be moderated 
+by years of experience, management responsibility, or whether the respondent has 
+actively worked alongside older colleagues who have pursued Continuing 
+Education.
+
+### Research Question 3
+**How ageist is the IT workforce?**
+
+The low ageism level is consistent across all four Fraboni subscales 
+(Discrimination, Avoidance, Antilocution), none of which shows a significant 
+relationship with respondent age (ANOVA p = 0.563). No demographic subgroup — by 
+age, gender, education, IT field, or industry — scores meaningfully higher than 
+any other.
+
+It is worth noting that the sample is heavily concentrated in Healthcare & Life
+Science (51%) and skewed male (77%). Both factors may limit the general ability 
+to the broader IT workforce. Future research drawing from a more diverse 
+industry cross-section would strengthen claims about the IT workforce as a 
+whole.
+
+### Emergent Finding
+**Workplace Ageist Beliefs Cross-Validate General Ageism**
+
+Beyond the three research questions, the strongest statistical signal in the 
+entire dataset is the correlation between workplace ageist beliefs (AE Q1–11 
+composite) and Fraboni Total Score (ρ = `r round(ae_cor$estimate, 3)`, 
+p < 0.001). This relationship confirms that the two instruments are measuring 
+related constructs — respondents who express ageist views about older IT 
+coworkers in a workplace context also score higher on a general measure of 
+ageism. This convergent validity strengthens confidence in both scales as 
+meaningful tools for studying ageism in the IT workforce.

@@ -1,0 +1,179 @@
+# Participant Demographics
+
+This section focuses on the demographics of the survey participants. I will 
+use the data frame provided earlier to analyze and report on the demographics of 
+survey participants. No further cleaning of the data frame occurs in this 
+section.
+
+```{r}
+#| label: set-demog-Setup
+#| include: false
+#| echo: false
+
+library('tidyverse')
+library('ggthemes')
+
+source("_graph_standards_bar.R")
+
+main_df <- readRDS("main_df.rds")
+```
+
+## Participant Age Grouping Demographics
+
+The age demographics of participants is fairly well spread out with most of the 
+people reporting an age of 45-54 years old. This is a bell curve that is 
+weighted a bit more towards the 65+ over the 18-24 year old participants. As 
+previously indicated, all participants reporting ages under 18 or skipped 
+reporting their age were removed from this research analysis.
+
+```{r}
+#| label: fig-demog-AgeChart
+#| fig-cap: "Survey Participants by Age Group"
+#| fig-height: 4
+
+graph_bar_chart(main_df, 
+                'Age', 
+                'Age Grouping', 
+                'Participant Count')
+```
+
+## Participant Gender Demographics
+
+Male participants represent approximately 76% of respondents with Female 
+participants at roughly 24%. One respondent did not report gender and is 
+excluded from gender-based comparisons. This gender skew is consistent with the 
+broader gender imbalance in the IT industry and should be considered when 
+interpreting results.
+
+NEED BETTER STATEMENT AND CITATION.
+Gender imbalance is well documented through research. The WorldBank 2025 report 
+on Digital Progress and Trends notes that women only make up 24 percent of 
+Information and Communication Technology professionals world-wide.
+
+<https://openknowledge.worldbank.org/server/api/core/bitstreams/99474f35-6a0c-48c3-9104-7b693e04313e/content>
+
+
+```{r}
+#| label: fig-demog-GenderChart
+#| fig-cap: "Survey Participants By Gender"
+#| fig-height: 3
+
+graph_bar_chart(main_df,
+                'Gender',
+                'Gender',
+                'Participant Count')
+```
+
+The table below restricts the comparison to respondents who identified as
+Male or Female, excluding those who did not report a gender or selected
+"Prefer not to say."
+
+```{r}
+#| label: tbl-demog-GenderMaleFemale
+#| tbl-cap: Male vs. Female Participants (Excluding NA and Prefer Not to Say)
+
+main_df |>
+  filter(Gender %in% c("Male", "Female")) |>
+  count(Gender, name = "n") |>
+  mutate(Percent = paste0(round(n / sum(n) * 100, 1), "%")) |>
+  knitr::kable(col.names = c("Gender", "Count", "Percent"),
+               align = c("l", "r", "r"))
+```
+
+## Participant Country Demographics
+
+The United States accounts for the large majority of respondents. The remaining
+participants represent eight other countries, none exceeding 5% of the sample
+individually. Given this concentration, country of residence is not examined as
+an independent variable in the analysis.
+
+```{r}
+#| label: tbl-demog-CountryTable
+#| tbl-cap: Participants By Country
+
+main_df |>
+  mutate(Country = recode(Country,
+    "United Kingdom of Great Britain and Northern Ireland" = "United Kingdom"
+  )) |>
+  count(Country, name = "n") |>
+  mutate(
+    Country = tidyr::replace_na(as.character(Country), "Not Reported"),
+    Percent = paste0(round(n / nrow(main_df) * 100, 1), "%")
+  ) |>
+  arrange(desc(n)) |>
+  knitr::kable(col.names = c("Country", "Count", "Percent"),
+               align = c("l", "r", "r"))
+```
+
+## Participant Education Level Demographics
+
+This analysis shows a fairly diverse education level for the participants. 
+Bachelor's (or equivalent) and Graduate Degree holders representing the 
+majority of survey participants with almost 80% of respondents.
+
+```{r}
+#| label: fig-demog-EducationChart
+#| fig-cap: "Survey Participants By Education Level"
+#| fig-height: 5
+#| out-width: "100%"
+
+graph_bar_chart(main_df, 
+                'Education', 
+                'Education Level', 
+                'Participant Count')
+```
+
+## Participant IT Field Demographics
+
+Participants represent a wide range of IT specializations. Software Development 
+is the most common field at 22% of respondents, followed by Cloud Infrastructure 
+& DevOps (11%), Database Management & ERP (9%), and Systems & Network 
+Administration (9%). Data & Analytics and IT Support & Help Desk each account 
+for roughly 7-8%. The remaining participants are distributed across eight other 
+specializations.
+
+```{r}
+#| label: fig-demog-ITFieldChart
+#| fig-height: 8
+#| fig-cap: "Survey Participants By IT Field"
+#| out-width: "100%"
+
+graph_bar_chart(main_df, 
+                'IT_Field', 
+                'IT Field', 
+                'Participant Count')
+```
+
+## Participant IT Industry Demographics
+
+The sample is heavily concentrated in two industries. Healthcare & Life Science 
+account for 51% of respondents. Information Technology accounts for an 
+additional 20%. The remaining 29% are distributed across twelve other 
+industries, with Education and Government & Public Sector each representing 
+about 4%. The concentration in Healthcare & Life Science likely reflects the 
+distribution channels I used to recruit participants.
+
+```{r}
+#| label: fig-demog-ITIndustryChart
+#| fig-cap: "Survey Participants By IT Industry"
+#| fig-height: 7
+#| out-width: "100%"
+
+graph_bar_chart(main_df, 
+                'IT_Industry', 
+                'IT Industry', 
+                'Participant Count')
+```
+
+## Conclusion
+
+This section highlights the demographics of the survey participants. Notable
+results from this section include:
+
+* Age Groups are represented with a bell curve weighted more towards the older
+groups than younger groups.
+* Gender imbalance reflects the IT Industry as a whole.
+* The United States represents the largest number of survey takers.
+* Education has most respondents reporting Bachelor or Graduate degrees.
+* A diverse representation from different IT Fields are represented.
+* The IT Industry is heavily represented by Healthcare and Life Science jobs.
